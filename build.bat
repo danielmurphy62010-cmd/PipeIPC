@@ -31,7 +31,7 @@ cl /nologo /c /std:c++20 /O2 /EHsc /MD /W3 /permissive- /DNOMINMAX /DWIN32_LEAN_
 where python >nul 2>&1
 if errorlevel 1 (set "PY_STATUS=skipped - Python not found"&goto :java)
 echo Building Python binding...
-python -m pip install --user --upgrade pybind11==3.1.0 || goto :fail
+python -m pip install --upgrade pybind11==3.1.0 || goto :fail
 for /f "delims=" %%I in ('python -c "import pybind11; print(pybind11.get_include())"') do set "PYBIND_INC=%%I"
 for /f "delims=" %%I in ('python -c "import sysconfig; print(sysconfig.get_path('include'))"') do set "PY_INC=%%I"
 for /f "delims=" %%I in ('python -c "import sysconfig,sys,os; print(sysconfig.get_config_var('LIBDIR') or os.path.join(sys.base_prefix,'libs'))"') do set "PY_LIB=%%I"
