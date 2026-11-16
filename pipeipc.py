@@ -125,7 +125,7 @@ class SharedVars:
                         attrs[key] = copy.deepcopy(remote[key])
                     else:
                         attrs.pop(key, None)
-                current = self._copy_dict(attrs)
+                current = SharedVars._copy_dict(attrs)
                 merged_base = SharedVars._copy_dict(current)
                 for key in dirty:
                     if key in previous:
