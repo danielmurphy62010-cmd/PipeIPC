@@ -1,5 +1,4 @@
 import pipeipc.Client;
-import pipeipc.MessageListener;
 import pipeipc.Server;
 import pipeipc.SharedVars;
 import java.nio.charset.StandardCharsets;
