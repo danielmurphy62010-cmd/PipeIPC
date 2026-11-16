@@ -100,13 +100,13 @@ vars.write("config", pipeipc::Value(std::string("ready")));
 auto current = vars.read("counter");
 ```
 
-A `SharedVars` object requires an already-connected client and waits up to ten seconds for the initial snapshot. Values written locally are updated optimistically; the broker then publishes the committed update to connected clients. Variable updates are asynchronous across clients. Concurrent writes are applied in the order processed by the broker, with the last processed write determining the final value.
+A `SharedVars` object requires an already-connected client and waits up to ten seconds for the initial snapshot. Use one `SharedVars` object per client. In native C++, destroy `SharedVars` before its `Client`. Values written locally are updated optimistically; the broker then publishes the committed update to connected clients. Variable updates are asynchronous across clients. Concurrent writes are applied in the order processed by the broker, with the last processed write determining the final value.
 
 ## Behavior and limits
 
 - The broker namespace is the `Server`/`Client` name. Processes using different names do not communicate.
 - The broker must be running before clients connect.
-- Messages are broadcast to all connected clients, including the sender. A client receives a label only after registering it with `on` or `on_value`.
+- Messages are broadcast to all connected clients, including the sender. A client receives a label only after registering it with `on` or `on_value`. Callbacks run on the receive thread and should hand long-running work to an application worker thread.
 - Shared variables are volatile: stopping the broker clears the store. They are not persisted to disk.
 - A raw message or encoded value is limited to 16 MiB. The server's per-client outbound queue defaults to 256 MiB.
 - A client that exceeds the server's outbound queue limit is disconnected.
