@@ -1,4 +1,4 @@
-#include "quickipc/protocol.hpp"
+#include "protocol.hpp"
 #include <Windows.h>
 #include <bcrypt.h>
 #include <blake3.h>

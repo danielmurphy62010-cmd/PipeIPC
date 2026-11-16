@@ -1,5 +1,5 @@
-#include "quickipc/runtime.hpp"
-#include "quickipc/pipe.hpp"
+#include "runtime.hpp"
+#include "pipe.hpp"
 #include <Windows.h>
 #include <objbase.h>
 #include <algorithm>

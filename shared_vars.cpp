@@ -1,4 +1,4 @@
-#include "quickipc/shared_vars.hpp"
+#include "shared_vars.hpp"
 #include <stdexcept>
 namespace quickipc {
 SharedVars::SharedVars(std::string l,std::string p,bool c):label_(std::move(l)),process_(std::move(p)),creator_(c){if(label_.empty()||process_.empty())throw std::invalid_argument("label and process id required");}

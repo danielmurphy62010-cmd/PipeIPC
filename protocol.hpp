@@ -1,5 +1,5 @@
 #pragma once
-#include "quickipc/value.hpp"
+#include "value.hpp"
 #include <array>
 #include <cstdint>
 #include <span>

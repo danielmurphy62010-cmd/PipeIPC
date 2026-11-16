@@ -1,5 +1,5 @@
-#include "quickipc/value.hpp"
-#include "quickipc/routing.hpp"
+#include "value.hpp"
+#include "routing.hpp"
 #include <cassert>
 using namespace quickipc;
 int main(){

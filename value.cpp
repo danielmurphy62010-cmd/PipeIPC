@@ -1,5 +1,5 @@
-#include "quickipc/value.hpp"
-#include "quickipc/protocol.hpp"
+#include "value.hpp"
+#include "protocol.hpp"
 #include <bit>
 #include <stdexcept>
 #include <type_traits>

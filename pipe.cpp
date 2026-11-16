@@ -1,4 +1,4 @@
-#include "quickipc/pipe.hpp"
+#include "pipe.hpp"
 #include <stdexcept>
 #include <utility>
 namespace quickipc {

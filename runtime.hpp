@@ -1,8 +1,8 @@
 #pragma once
-#include "quickipc/protocol.hpp"
-#include "quickipc/routing.hpp"
-#include "quickipc/shared_vars.hpp"
-#include "quickipc/pipe.hpp"
+#include "protocol.hpp"
+#include "routing.hpp"
+#include "shared_vars.hpp"
+#include "pipe.hpp"
 #include <atomic>
 #include <condition_variable>
 #include <deque>
