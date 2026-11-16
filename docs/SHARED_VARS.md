@@ -1,7 +1,7 @@
-# Shared-variable containers
+# Shared variables
 
-Each container has its own listener label; one process may join multiple containers. The creator is authoritative. A joining client requests the complete variable snapshot from the creator and installs it before join completes. Only the creator answers variable requests and commits authoritative updates.
+Each SharedVars object has a unique listener label; processes may join multiple labels. The creator is authoritative and serves snapshots. Joining clients must request the creator snapshot before installing it. Mutations on non-creators are rejected.
 
-Recursive values use distinct stable tags: None=0, Dict=1, List=2, Tuple=3, Set=4, Int64=5, Float64=6, Bool=7, Bytes=8. Integers are signed 64-bit two's-complement; floats are IEEE-754 binary64. Dict keys are UTF-8 strings. Lists, tuples, and sets retain distinct tags during round trips.
+Recursive value tags: None=0, Dict=1, List=2, Tuple=3, Set=4, Int64=5, Float64=6, Bool=7, Bytes=8. Integer is signed 64-bit; float is IEEE-754 binary64. Dict keys are UTF-8 strings. Lists, tuples and sets use distinct wrapper types and distinct tags.
 
-Sub-container routing is dot-segment aware. A message on `abc.def.ghi` reaches exact and ancestor listeners `abc.def.ghi`, `abc.def`, and `abc`; it does not reach `abc.def.jkl` or `abcd`.
+Routing matches exact labels and ancestors on dot boundaries: abc.def.ghi reaches abc.def.ghi, abc.def and abc, but not abc.def.jkl or abcd.

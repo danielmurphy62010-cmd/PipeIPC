@@ -7,7 +7,7 @@
 namespace quickipc {
 using Listener=std::function<void(const std::string&,const Bytes&)>;
 using ReplyHandler=std::function<Bytes(const Bytes&)>;
-class ListenerRegistry{
+class ListenerRegistry {
 public:
  void add(std::string,Listener); void remove(const std::string&);
  void dispatch(const std::string&,const Bytes&)const;
@@ -16,7 +16,7 @@ public:
  Bytes request(const std::string&,const Bytes&)const;
 private:
  mutable std::mutex mutex_; std::map<std::string,Listener> listeners_;
- struct ReplyOwner{std::string process_id;ReplyHandler callback;};
- std::map<std::string,ReplyOwner> replies_;
+ struct Owner { std::string process; ReplyHandler callback; };
+ std::map<std::string,Owner> replies_;
 };
 }

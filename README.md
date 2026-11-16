@@ -1,34 +1,21 @@
 # QuickIPC
 
-Windows-only, message-oriented inter-process communication in C++ with thin Python and Java bindings planned.
-
-## Design
-
-- Native Windows named pipes; no POSIX transport.
-- Four logical channels: TX, RX, TX ACK, RX ACK.
-- A broker fans each published message out to every connected process. A single shared FIFO is not used for broadcast because multiple readers would compete for bytes.
-- Per-client queues isolate slow consumers.
-- Protocol frames use two server-generated 8-byte magic values, a 16 MiB maximum payload, monotonically assigned message IDs, BLAKE3 header and payload digests, and an 8-byte listener-label identifier.
-- ACK/NACK messages carry the exact original frame header. A redundant notification uses status byte `'2'`.
-- Listeners are registered on a client instance, not globally. Hierarchical labels dispatch to exact and ancestor listeners only.
-- Request/reply registration is exclusive per listener label.
-- Shared-variable containers are independently named by listener label. The creator owns and serves variable requests; joining clients request the container's current variables.
-
-## Shared value types
-
-The wire format has distinct tags for Dict, List, Tuple, Set, Int64, Float64, Bool, Bytes, and None. Integers and floating-point values are always encoded as 64-bit values. List, Tuple, and Set are never conflated.
+Windows-only C++ IPC library with native named pipes, per-peer broadcast queues, BLAKE3-framed messages, listener routing, typed shared values, and C++ client/server APIs.
 
 ## Build
 
-Requires Visual Studio 2022 (or another MSVC toolchain), CMake 3.24+, and the BLAKE3 C library. Configure with:
+Visual Studio 2022, CMake 3.24+, and internet access for CMake FetchContent (BLAKE3).
 
 ```powershell
 cmake -S . -B build -A x64
 cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
 ```
 
-The BLAKE3 dependency is located with CMake's `find_package(blake3 CONFIG REQUIRED)`; provide a package exporting `blake3::blake3`.
+Start `quickipc_server.exe`, then run any number of `quickipc_client.exe` processes.
 
-## Status
+## Important current limitations
 
-Initial repository scaffold. See `docs/PROTOCOL.md` and `docs/SHARED_VARS.md` for wire and shared-state contracts.
+This release provides the native transport skeleton and typed serialization, but request/reply routing and shared-variable snapshot exchange are not yet connected to the wire protocol. The current client callback dispatch also needs a label registry (the frame carries only its 8-byte label hash). These methods fail explicitly rather than silently pretending to work. Do not use this version as a production IPC service until those paths and Windows integration tests are completed.
+
+See docs/ for the frame and value contracts.
