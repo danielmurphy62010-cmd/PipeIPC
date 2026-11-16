@@ -1,10 +1,8 @@
 # Language interfaces
 
-Both bindings expose the C++ `SharedVars` value container. They currently wrap the existing in-process C++ class; they do not add cross-process snapshot/update transport.
+The application-facing API is attribute/field based. There are no public `set` or `get` calls.
 
 ## Python
-
-Build with CMake after installing a 64-bit Python 3.10+ development environment:
 
 ```powershell
 cmake -S . -B build -A x64 -DQUICKIPC_BUILD_TESTS=ON -DQUICKIPC_BUILD_PYTHON=ON
@@ -16,13 +14,29 @@ python examples/python_example.py
 ```python
 from quickipc import SharedVars
 state = SharedVars("game")
-state.set("player", {"name": "Ada", "position": (10, 20), "tags": {"admin"}})
-print(state.get("player"))
+state.player = {"name": "Ada", "position": (10, 20), "tags": {"admin"}}
+print(state.player)
+del state.player
 ```
 
-Supported values: None, bool, signed 64-bit int, float, str (UTF-8), bytes, list, tuple, set/frozenset, and dict with string keys. Custom Python objects must be converted to these types by the application.
+Assign and read attributes directly. `snapshot()` returns a normal dictionary for enumeration; `"name" in state` checks existence. Names beginning with underscore are reserved.
+
+Supported values: None, bool, signed 64-bit int, float, UTF-8 str, bytes, list, tuple, set/frozenset, and dict with string keys.
 
 ## Java
+
+Java has no dynamic instance attributes, so declare the shared fields in a subclass. The fields must be non-static, non-final, non-transient, and public or reflectively accessible.
+
+```java
+public final class GameState extends SharedVars {
+    public Object player;
+    public GameState(String label) { super(label); }
+}
+try (GameState state = new GameState("game")) {
+    state.player = Map.of("name", "Ada");
+    System.out.println(state.player);
+}
+```
 
 Build with a 64-bit JDK (JNI headers and JVM) and CMake:
 
@@ -33,6 +47,6 @@ javac -d build/java bindings/java/quickipc/SharedVars.java examples/JavaExample.
 java -Djava.library.path=build/Release -cp build/java JavaExample
 ```
 
-Java values: null, String, Boolean, Byte/Short/Integer/Long, Float/Double, byte[], List, Set, and Map with String keys. Java List is used for both C++ List and Tuple on return.
+Java values: null, String, Boolean, Byte/Short/Integer/Long, Float/Double, byte[], List, Set, and Map with String keys. Java List represents both C++ List and Tuple when converted back.
 
-The bindings reject unsupported objects instead of stringifying them or silently losing type information. A value must fit the C++ wire-format limits and supported types.
+**Important status:** the current C++ SharedVars storage and these bindings are an in-process value container only. They do not yet synchronize attributes between separate processes over the named-pipe runtime. Cross-process propagation remains unimplemented.
