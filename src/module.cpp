@@ -3,6 +3,7 @@
 #include <Python.h>
 #include <type_traits>
 #include <memory>
+#include <stdexcept>
 namespace py=pybind11; using namespace pipeipc;
 
 static Value from_py(py::handle h){
