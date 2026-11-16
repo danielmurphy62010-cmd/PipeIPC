@@ -61,6 +61,7 @@ void ListenerRegistry::add(std::string l,Listener cb){
  std::lock_guard g(mutex_);listeners_[std::move(l)]=std::move(item);
 }
 void ListenerRegistry::remove(const std::string&l){std::lock_guard g(mutex_);listeners_.erase(l);}
+bool ListenerRegistry::contains(const std::string&l)const{std::lock_guard g(mutex_);return listeners_.contains(l);}
 void ListenerRegistry::dispatch(const std::string&l,const Value&v)const{
  std::vector<std::shared_ptr<Listener>> calls;
  {std::lock_guard g(mutex_);for(auto&[k,cb]:listeners_)if(l==k)calls.push_back(cb);}
@@ -283,13 +284,16 @@ void Client::receive_loop(){
   }else{
    auto message=decode_message_payload(frame.payload);
    if(listener_hash(message.label)!=frame.header.listener_id)throw std::runtime_error("message label/hash mismatch");
-   const auto size=encode_value(message.value).size();
-   {std::lock_guard lock(inbox_mutex_);
-    if(inbox_bytes_+size>options_.max_queue_bytes)throw std::runtime_error("client receive queue limit exceeded");
-    inbox_bytes_+=size;inbox_.push_back(message);
+   if(listeners_.contains(message.label)){
+    listeners_.dispatch(message.label,message.value);
+   }else{
+    const auto size=encode_value(message.value).size();
+    {std::lock_guard lock(inbox_mutex_);
+     if(inbox_bytes_+size>options_.max_queue_bytes)throw std::runtime_error("client receive queue limit exceeded");
+     inbox_bytes_+=size;inbox_.push_back(std::move(message));
+    }
+    inbox_cv_.notify_one();
    }
-   inbox_cv_.notify_one();
-   listeners_.dispatch(message.label,message.value);
   }
   write_wire(txack_->get(),encode_ack(secrets_,frame.header,'1'));
   write_wire(txack_->get(),encode_ack(secrets_,frame.header,'2'));
