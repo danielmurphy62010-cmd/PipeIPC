@@ -1,5 +1,5 @@
 #include <jni.h>
-#include "shared_vars.hpp"
+#include "quickipc.hpp"
 #include <stdexcept>
 using namespace quickipc;
 static std::string str(JNIEnv*e,jstring s){

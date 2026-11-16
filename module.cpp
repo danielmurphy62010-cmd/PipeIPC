@@ -1,5 +1,5 @@
 #include <pybind11/pybind11.h>
-#include "shared_vars.hpp"
+#include "quickipc.hpp"
 #include <type_traits>
 namespace py=pybind11; using namespace quickipc;
 static Value from_py(py::handle h){
