@@ -18,7 +18,7 @@ std::string from_string(JNIEnv*e,jstring value){
 }
 Bytes from_byte_array(JNIEnv*e,jbyteArray value){
  if(!value)throw std::invalid_argument("null byte array");
- jsize n=e->GetArrayLength(value);Bytes out(std::size_t(n));
+ jsize n=e->GetArrayLength(value);Bytes out;out.resize(static_cast<std::size_t>(n));
  if(n)e->GetByteArrayRegion(value,0,n,reinterpret_cast<jbyte*>(out.data()));
  return out;
 }
@@ -53,7 +53,6 @@ JavaSharedVarsHandle& vars_ref(jlong h){if(!h)throw std::invalid_argument("close
 
 Value from_java(JNIEnv*e,jobject o){
  if(!o)return Value{};
- jclass cls=e->GetObjectClass(o);
  jclass boolean_cls=e->FindClass("java/lang/Boolean");
  if(e->IsInstanceOf(o,boolean_cls)){jmethodID m=e->GetMethodID(boolean_cls,"booleanValue","()Z");return Value(bool(e->CallBooleanMethod(o,m)));}
  jclass string_cls=e->FindClass("java/lang/String");
@@ -89,7 +88,6 @@ Value from_java(JNIEnv*e,jobject o){
   Dict values;for(jsize i=0;i<n;i++){jobject entry=e->GetObjectArrayElement(array,i);jobject key=e->CallObjectMethod(entry,get_key);jobject value=e->CallObjectMethod(entry,get_value);std::string k=from_string(e,static_cast<jstring>(key));values.values[k]=from_java(e,value);e->DeleteLocalRef(entry);e->DeleteLocalRef(key);e->DeleteLocalRef(value);}
   e->DeleteLocalRef(array);e->DeleteLocalRef(entries);return Value(std::move(values));
  }
- (void)cls;
  throw std::invalid_argument("unsupported Java shared value type");
 }
 jobject to_java(JNIEnv*e,const Value&v){
