@@ -75,6 +75,7 @@ mkdir "%BUILD%\java" 2>nul
 copy /y "%BUILD%\quickipc_client.exe" . >nul || goto :err
 copy /y "%BUILD%\quickipc_server.exe" . >nul || goto :err
 copy /y "%BUILD%\quickipc_tests.exe" . >nul || goto :err
+copy /y "%BUILD%\quickipc_core.lib" . >nul || goto :err
 if exist "%BUILD%\quickipc.pyd" copy /y "%BUILD%\quickipc.pyd" . >nul || goto :err
 if exist "%BUILD%\quickipc_jni.dll" copy /y "%BUILD%\quickipc_jni.dll" . >nul || goto :err
 if exist "%BUILD%\quickipc.jar" copy /y "%BUILD%\quickipc.jar" . >nul || goto :err
