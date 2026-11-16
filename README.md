@@ -33,10 +33,13 @@ state.config = {"enabled": True, "ports": [8000, 8001]}
 client.send("app.command", {"action": "reload", "force": True})
 
 # Receive the next message. Returns (label, value), or None on timeout.
-label, value = client.recv(5000)
+message = client.recv(5000)
+if message is not None:
+    label, value = message
 
 # Or handle a label with a callback.
-client.on("app.command", lambda label, value: print(value))
+client.on("app.event", lambda label, value: print(value))
+client.send("app.event", {"action": "handled by on"})
 
 state.counter = 2
 del state.config
@@ -67,7 +70,8 @@ try (Client client = new Client("my-app")) {
         Message message = client.recv(5000);
         if (message != null) System.out.println(message.label() + ": " + message.value());
 
-        client.on("app.command", (label, value) -> System.out.println(value));
+        client.on("app.event", (label, value) -> System.out.println(value));
+        client.send("app.event", java.util.Map.of("action", "handled by on"));
     }
 }
 server.close();
@@ -92,9 +96,10 @@ if (message) {
     // message->label and message->value
 }
 
-client.on("app.command", [](const std::string& label, const pipeipc::Value& value) {
+client.on("app.event", [](const std::string& label, const pipeipc::Value& value) {
     // Handle a matching message.
 });
+client.send("app.event", pipeipc::Value(std::string("handled by on")));
 
 pipeipc::SharedVars vars(client);
 vars.write("counter", pipeipc::Value(std::int64_t(1)));
