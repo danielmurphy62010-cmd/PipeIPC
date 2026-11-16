@@ -33,9 +33,9 @@ cl /nologo /c /std:c++20 /O2 /EHsc /MD /W3 /permissive- /DNOMINMAX /DWIN32_LEAN_
 lib /nologo /OUT:"%BUILD%\quickipc_core.lib" "%BUILD%\pipe.obj" "%BUILD%\protocol.obj" "%BUILD%\routing.obj" "%BUILD%\runtime.obj" "%BUILD%\shared_vars.obj" "%BUILD%\value.obj" "%BUILD%\blake3.obj" "%BUILD%\blake3_dispatch.obj" "%BUILD%\blake3_portable.obj" || goto :err
 
 echo Building C++ programs...
-cl /nologo /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I. client.cpp "%BUILD%\quickipc_core.lib" bcrypt.lib ole32.lib /Fe:"%BUILD%\quickipc_client.exe" || goto :err
-cl /nologo /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I. server.cpp "%BUILD%\quickipc_core.lib" bcrypt.lib ole32.lib /Fe:"%BUILD%\quickipc_server.exe" || goto :err
-cl /nologo /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I. tests.cpp "%BUILD%\quickipc_core.lib" bcrypt.lib ole32.lib /Fe:"%BUILD%\quickipc_tests.exe" || goto :err
+cl /nologo /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I. client.cpp "%BUILD%\quickipc_core.lib" bcrypt.lib ole32.lib /Fo%BUILD%\\ /Fe:"%BUILD%\quickipc_client.exe" || goto :err
+cl /nologo /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I. server.cpp "%BUILD%\quickipc_core.lib" bcrypt.lib ole32.lib /Fo%BUILD%\\ /Fe:"%BUILD%\quickipc_server.exe" || goto :err
+cl /nologo /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I. tests.cpp "%BUILD%\quickipc_core.lib" bcrypt.lib ole32.lib /Fo%BUILD%\\ /Fe:"%BUILD%\quickipc_tests.exe" || goto :err
 "%BUILD%\quickipc_tests.exe" || goto :err
 
 where python >nul 2>&1
@@ -48,7 +48,7 @@ if not errorlevel 1 (
   for /f "delims=" %%I in ('python -c "import sys; print('python%%d%%d.lib' %% sys.version_info[:2])"') do set "PY_LIBFILE=%%I"
   if not exist "%PY_INC%\Python.h" (echo Python.h not found; skipping Python binding.&goto :java)
   if not exist "%PY_LIB%\%PY_LIBFILE%" (echo %PY_LIBFILE% not found; skipping Python binding.&goto :java)
-  cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I. /I"%B3%\c" /I"%PY_INC%" /I"%PYBIND_INC%" module.cpp "%BUILD%\quickipc_core.lib" bcrypt.lib ole32.lib /link /LIBPATH:"%PY_LIB%" "%PY_LIBFILE%" /OUT:"%BUILD%\quickipc.pyd" || goto :err
+  cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I. /I"%B3%\c" /I"%PY_INC%" /I"%PYBIND_INC%" module.cpp "%BUILD%\quickipc_core.lib" bcrypt.lib ole32.lib /link /LIBPATH:"%PY_LIB%" "%PY_LIBFILE%" /Fo%BUILD%\\ /OUT:"%BUILD%\quickipc.pyd" || goto :err
   set "PYTHONPATH=%CD%\%BUILD%"
   python -c "from quickipc import SharedVars; s=SharedVars('ci'); s.payload={'x':[1,2.5,True]}; assert s.payload['x'][0] == 1; del s.payload; assert 'payload' not in s" || goto :err
 ) else (
@@ -65,7 +65,7 @@ if not exist "%JAVA_HOME%\include\jni.h" (
   goto :copy
 )
 echo Building Java JNI binding...
-cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I. /I"%JAVA_HOME%\include" /I"%JAVA_HOME%\include\win32" jni.cpp "%BUILD%\quickipc_core.lib" bcrypt.lib ole32.lib /Fe:"%BUILD%\quickipc_jni.dll" || goto :err
+cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I. /I"%JAVA_HOME%\include" /I"%JAVA_HOME%\include\win32" jni.cpp "%BUILD%\quickipc_core.lib" bcrypt.lib ole32.lib /Fo%BUILD%\\ /Fe:"%BUILD%\quickipc_jni.dll" || goto :err
 mkdir "%BUILD%\java" 2>nul
 "%JBIN%\javac.exe" -d "%BUILD%\java" SharedVars.java JavaExample.java || goto :err
 "%JBIN%\java.exe" "-Djava.library.path=%CD%\%BUILD%" -cp "%BUILD%\java" JavaExample || goto :err
