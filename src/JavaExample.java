@@ -1,7 +1,7 @@
 import pipeipc.Client;
+import pipeipc.Message;
 import pipeipc.Server;
 import pipeipc.SharedVars;
-import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -30,20 +30,23 @@ public final class JavaExample {
                     initial.put("numbers", java.util.List.of(1L, 2.5, true));
                     firstVars.set("state", initial);
                     waitFor(() -> secondVars.contains("state"), "shared-variable update");
-                    System.out.println("Read from second process: " + secondVars.get("state"));
 
                     secondVars.set("state", "written by the other client");
                     waitFor(() -> "written by the other client".equals(firstVars.get("state")),
                             "cross-client variable write");
 
-                    CountDownLatch received = new CountDownLatch(1);
-                    second.on("example.message", (label, payload) -> {
-                        System.out.println(label + ": " + new String(payload, StandardCharsets.UTF_8));
-                        received.countDown();
+                    CountDownLatch handled = new CountDownLatch(1);
+                    second.on("example.message", (label, value) -> {
+                        System.out.println("on(): " + label + " = " + value);
+                        handled.countDown();
                     });
-                    first.publish("example.message", "hello over PipeIPC".getBytes(StandardCharsets.UTF_8));
-                    if (!received.await(5, TimeUnit.SECONDS))
-                        throw new IllegalStateException("Message delivery timed out");
+                    first.send("example.message", Map.of("text", "hello", "count", 3L));
+
+                    Message message = second.recv(5000);
+                    if (message == null) throw new IllegalStateException("recv() timed out");
+                    if (!handled.await(5, TimeUnit.SECONDS))
+                        throw new IllegalStateException("on() timed out");
+                    System.out.println("recv(): " + message);
                 }
             }
         }
