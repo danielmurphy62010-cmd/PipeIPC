@@ -1,5 +1,4 @@
 #include "quickipc.hpp"
-#include "quickipc.hpp"
 #include <cassert>
 using namespace quickipc;
 int main(){
