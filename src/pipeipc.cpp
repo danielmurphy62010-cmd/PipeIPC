@@ -227,8 +227,15 @@ void Client::on(std::string l,Listener cb){if(l=="__pipeipc.shared")throw std::i
 void Client::off(const std::string&l){if(l=="__pipeipc.shared")throw std::invalid_argument("reserved PipeIPC label");listeners_.remove(l);auto id=listener_hash(l);std::lock_guard g(label_mutex_);labels_.erase(id);}
 void Client::publish(const std::string&l,const Bytes&p){if(!connected_)throw std::runtime_error("disconnected");if(l.empty())throw std::invalid_argument("message label cannot be empty");if(l=="__pipeipc.shared")throw std::invalid_argument("reserved PipeIPC label");auto b=encode_frame(secrets_,next_mid_++,listener_hash(l),p);std::lock_guard g(send_mutex_);write_wire(tx_->get(),b);}
 void Client::publish_shared(const Bytes&p){if(!connected_)throw std::runtime_error("disconnected");auto b=encode_frame(secrets_,next_mid_++,shared_channel(),p);std::lock_guard g(send_mutex_);write_wire(tx_->get(),b);}
-void Client::on_shared(Listener cb){auto id=shared_channel();{std::lock_guard g(label_mutex_);labels_[id]="__pipeipc.shared";}listeners_.add("__pipeipc.shared",std::move(cb));}
-void Client::off_shared(){listeners_.remove("__pipeipc.shared");std::lock_guard g(label_mutex_);labels_.erase(shared_channel());}
+void Client::on_shared(Listener cb){
+ bool expected=false;if(!shared_subscribed_.compare_exchange_strong(expected,true))throw std::runtime_error("only one SharedVars object is allowed per Client");
+ try{auto id=shared_channel();{std::lock_guard g(label_mutex_);labels_[id]="__pipeipc.shared";}listeners_.add("__pipeipc.shared",std::move(cb));}
+ catch(...){shared_subscribed_=false;throw;}
+}
+void Client::off_shared(){
+ if(!shared_subscribed_.exchange(false))return;
+ listeners_.remove("__pipeipc.shared");std::lock_guard g(label_mutex_);labels_.erase(shared_channel());
+}
 void Client::send(const std::string&l,const Value&v){publish(l,encode_value(v));}
 void Client::receive_loop(){while(connected_){try{auto b=read_frame(rx_->get(),secrets_);auto f=decode_frame(secrets_,b);std::string label;{std::lock_guard g(label_mutex_);auto i=labels_.find(f.header.listener_id);if(i!=labels_.end())label=i->second;}if(!label.empty())listeners_.dispatch(label,f.payload);auto ack=encode_ack(secrets_,f.header,'1');write_wire(txack_->get(),ack);write_wire(txack_->get(),encode_ack(secrets_,f.header,'2'));}catch(...){if(connected_)connected_=false;break;}}}
 void Client::ack_loop(){while(connected_){try{std::array<std::uint8_t,101>a{};read_exact(rxack_->get(),a.data(),a.size());}catch(...){if(connected_)connected_=false;break;}}}
