@@ -63,7 +63,7 @@ void ListenerRegistry::add(std::string l,Listener cb){
 void ListenerRegistry::remove(const std::string&l){std::lock_guard g(mutex_);listeners_.erase(l);}
 void ListenerRegistry::dispatch(const std::string&l,const Bytes&p)const{
  std::vector<std::shared_ptr<Listener>> calls;
- {std::lock_guard g(mutex_);for(auto&[k,cb]:listeners_)if(l==k||(l.size()>k.size()&&l.compare(0,k.size(),k)==0&&l[k.size()]=='.'))calls.push_back(cb);}
+ {std::lock_guard g(mutex_);for(auto&[k,cb]:listeners_)if(l==k)calls.push_back(cb);}
  for(auto&cb:calls){try{(*cb)(l,p);}catch(...){}}
 }
 }
@@ -245,7 +245,7 @@ SharedVars::SharedVars(Client&client,std::chrono::milliseconds timeout):client_(
   if(!cv_.wait_for(lock,timeout,[this]{return ready_;}))throw std::runtime_error("timed out waiting for shared-variable snapshot");
  }catch(...){client_->off_shared();throw;}
 }
-SharedVars::~SharedVars(){if(client_)client_->off("__pipeipc.shared");}
+SharedVars::~SharedVars(){if(client_)client_->off_shared();}
 void SharedVars::receive(const Bytes&b){
  try{
   if(b.empty())return;std::size_t pos=1;auto op=b[0];
