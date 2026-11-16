@@ -178,14 +178,14 @@ void Client::connect(){
  connected_=true;rx_thread_=std::thread(&Client::receive_loop,this);ack_thread_=std::thread(&Client::ack_loop,this);
 }
 void Client::disconnect(){
- if(!connected_.exchange(false))return;
+ connected_=false;
  for(auto*h:{tx_.get(),rx_.get(),txack_.get(),rxack_.get()})if(h&&h->valid())CancelIoEx(h->get(),nullptr);
  if(rx_thread_.joinable())rx_thread_.join();if(ack_thread_.joinable())ack_thread_.join();
  tx_.reset();rx_.reset();txack_.reset();rxack_.reset();
 }
 void Client::on(std::string l,Listener cb){auto id=listener_hash(l);{std::lock_guard g(label_mutex_);labels_[id]=l;}listeners_.add(std::move(l),std::move(cb));}
 void Client::off(const std::string&l){listeners_.remove(l);auto id=listener_hash(l);std::lock_guard g(label_mutex_);labels_.erase(id);}
-void Client::publish(const std::string&l,const Bytes&p){if(!connected_)throw std::runtime_error("disconnected");if(l.empty())throw std::invalid_argument("message label cannot be empty");if(listener_hash(l)==shared_channel())throw std::invalid_argument("reserved PipeIPC label");auto b=encode_frame(secrets_,next_mid_++,listener_hash(l),p);std::lock_guard g(send_mutex_);write_wire(tx_->get(),b);}
+void Client::publish(const std::string&l,const Bytes&p){if(!connected_)throw std::runtime_error("disconnected");if(l.empty())throw std::invalid_argument("message label cannot be empty");auto b=encode_frame(secrets_,next_mid_++,listener_hash(l),p);std::lock_guard g(send_mutex_);write_wire(tx_->get(),b);}
 void Client::send(const std::string&l,const Value&v){publish(l,encode_value(v));}
 void Client::request(const std::string&,const Bytes&,std::function<void(Bytes)>){throw std::runtime_error("request/reply protocol is not implemented");}
 bool Client::claim_reply(const std::string&,ReplyHandler){throw std::runtime_error("cross-process reply ownership is not implemented");}
