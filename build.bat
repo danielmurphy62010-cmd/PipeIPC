@@ -64,7 +64,7 @@ set "PY_LIB=%CD%\python-dev\tools\libs"
 :py_ready
 if not exist "%PY_INC%\Python.h" (set "PY_STATUS=skipped - Python.h unavailable"&echo Python.h unavailable; skipping binding.&goto :java)
 if not exist "%PY_LIB%\%PY_LIBFILE%" (set "PY_STATUS=skipped - %PY_LIBFILE% unavailable"&echo Python import library "%PY_LIBFILE%" unavailable; skipping binding.&goto :java)
-cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I..\src /Iblake3 /I"%PY_INC%" /I"%PYBIND_INC%" ..\src\module.cpp pipeipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /link /LIBPATH:"%PY_LIB%" "%PY_LIBFILE%" /OUT:pipeipc.pyd || goto :fail
+cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I..\src /Iblake3 /I"%PY_INC%" /I"%PYBIND_INC%" ..\src\module.cpp pipeipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /link /LIBPATH:"%PY_LIB%" "%PY_LIBFILE%" /OUT:_pipeipc.pyd || goto :fail
 set "PYTHONPATH=%CD%"
 python ..\python_example.py || goto :fail
 set "PY_STATUS=built"
@@ -82,7 +82,7 @@ set "JAVA_STATUS=built"
 
 :copy
 popd
-if exist build\pipeipc.pyd copy /y build\pipeipc.pyd . >nul || goto :err
+if exist build\_pipeipc.pyd copy /y build\_pipeipc.pyd . >nul || goto :err
 if exist build\pipeipc_jni.dll copy /y build\pipeipc_jni.dll . >nul || goto :err
 if exist build\pipeipc.jar copy /y build\pipeipc.jar . >nul || goto :err
 rmdir /s /q build
