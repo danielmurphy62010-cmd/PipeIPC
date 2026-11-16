@@ -21,6 +21,7 @@ void enc(Bytes&o,const Value&v){o.push_back(std::uint8_t(v.data.index()));std::v
  else if constexpr(std::is_same_v<T,std::int64_t>||std::is_same_v<T,double>)put(o,std::bit_cast<std::uint64_t>(x));
  else if constexpr(std::is_same_v<T,bool>)o.push_back(x?1:0);
  else if constexpr(std::is_same_v<T,Bytes>)blob(o,x);
+ else if constexpr(std::is_same_v<T,std::string>)blob(o,Bytes(x.begin(),x.end()));
  else if constexpr(std::is_same_v<T,List>||std::is_same_v<T,Tuple>){put(o,x.values.size());for(auto&e:x.values)enc(o,e);}
  else if constexpr(std::is_same_v<T,Set>){put(o,x.values.size());for(auto&e:x.values)enc(o,e);}
  else if constexpr(std::is_same_v<T,Dict>){put(o,x.values.size());for(auto&[k,val]:x.values){blob(o,Bytes(k.begin(),k.end()));enc(o,val);}}
@@ -32,6 +33,7 @@ Value dec(const Bytes&b,std::size_t&p){if(p>=b.size())throw std::runtime_error("
  case ValueTag::Float64:return Value(std::bit_cast<double>(get(b,p)));
  case ValueTag::Bool:if(p>=b.size()||b[p]>1)throw std::runtime_error("invalid bool");return Value(bool(b[p++]));
  case ValueTag::Bytes:return Value(unblob(b,p));
+ case ValueTag::String:{auto x=unblob(b,p);return Value(std::string(x.begin(),x.end()));}
  case ValueTag::List:case ValueTag::Tuple:case ValueTag::Set:{auto n=get(b,p);if(n>max_payload_size)throw std::runtime_error("container too large");
   if(t==ValueTag::List){List x;while(n--)x.values.push_back(dec(b,p));return Value(std::move(x));}
   if(t==ValueTag::Tuple){Tuple x;while(n--)x.values.push_back(dec(b,p));return Value(std::move(x));}
