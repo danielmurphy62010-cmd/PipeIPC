@@ -64,7 +64,7 @@ if not exist "%PY_INC%\Python.h" (set "PY_STATUS=skipped - Python.h unavailable"
 if not exist "%PY_LIB%\%PY_LIBFILE%" (set "PY_STATUS=skipped - %PY_LIBFILE% unavailable"&echo Python import library "%PY_LIBFILE%" unavailable; skipping binding.&goto :java)
 cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I..\src /Iblake3 /I"%PY_INC%" /I"%PYBIND_INC%" ..\src\module.cpp pipeipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /link /LIBPATH:"%PY_LIB%" "%PY_LIBFILE%" /OUT:pipeipc.pyd || goto :fail
 set "PYTHONPATH=%CD%"
-python -c "from pipeipc import SharedVars; s=SharedVars('ci'); s.payload={'x':[1,2.5,True]}; assert s.payload['x'][0] == 1; del s.payload; assert 'payload' not in s" || goto :fail
+python ..\python_example.py || goto :fail
 set "PY_STATUS=built"
 
 :java
@@ -73,7 +73,7 @@ if not exist "%JAVA_HOME%\include\jni.h" (set "JAVA_STATUS=skipped - JDK JNI hea
 echo Building Java binding...
 cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I..\src /I"%JAVA_HOME%\include" /I"%JAVA_HOME%\include\win32" ..\src\jni.cpp pipeipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /Fe:pipeipc_jni.dll || goto :fail
 mkdir java 2>nul
-"%JBIN%\javac.exe" -d java ..\src\SharedVars.java ..\src\JavaExample.java || goto :fail
+"%JBIN%\javac.exe" -d java ..\src\MessageListener.java ..\src\Server.java ..\src\Client.java ..\src\SharedVars.java ..\src\JavaExample.java || goto :fail
 "%JBIN%\java.exe" "-Djava.library.path=%CD%" -cp java JavaExample || goto :fail
 "%JBIN%\jar.exe" cf pipeipc.jar -C java . || goto :fail
 set "JAVA_STATUS=built"
