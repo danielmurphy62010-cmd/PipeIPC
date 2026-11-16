@@ -46,7 +46,7 @@ client.disconnect()
 server.stop()
 ```
 
-`send(label, value)` accepts `None`, booleans, signed 64-bit integers, floats, strings, bytes, lists, tuples, sets/frozensets, and dictionaries with string keys. `recv(timeout_ms=-1)` blocks until a message arrives or the client disconnects; a nonnegative timeout returns `None` when it expires. `on(label, callback)` invokes the callback with `(label, value)` when that label arrives. Both `recv` and `on` can be used together.
+`send(label, value)` accepts `None`, booleans, signed 64-bit integers, floats, strings, bytes, lists, tuples, sets/frozensets, and dictionaries with string keys. `recv(timeout_ms=-1)` blocks until a message arrives or the client disconnects; a nonnegative timeout returns `None` when it expires. `on(label, callback)` invokes the callback with `(label, value)` when that label arrives. Use `recv` for labels without a registered handler; messages matching an `on` subscription go to that callback instead of the receive queue.
 
 ## Java
 
@@ -107,7 +107,7 @@ A `SharedVars` object requires an already-connected client, waits up to ten seco
 
 - The broker namespace is the `Server`/`Client` name. Processes using different names do not communicate.
 - The broker must be running before clients connect.
-- Messages are broadcast to all connected clients, including the sender. `recv()` receives the next queued message; `on(label, callback)` invokes a callback for matching labels. Callbacks run on the receive thread and should hand long-running work to an application worker thread.
+- Messages are broadcast to all connected clients, including the sender. `recv()` receives the next message without a registered handler; `on(label, callback)` handles matching labels instead of queueing them. Callbacks run on the receive thread and should hand long-running work to an application worker thread.
 - Shared variables are volatile: stopping the broker clears the store. They are not persisted to disk.
 - A raw message or encoded value is limited to 16 MiB. The server's per-client outbound queue defaults to 256 MiB.
 - A client that exceeds the server's outbound queue limit is disconnected.
