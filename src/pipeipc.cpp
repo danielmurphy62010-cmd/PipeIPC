@@ -205,6 +205,7 @@ Client::~Client(){disconnect();}
 bool Client::connected()const noexcept{return connected_;}
 void Client::connect(){
  if(connected_)return;
+ disconnect();
  id_=make_id();
  auto c=open_pipe(ctl(options_),GENERIC_READ|GENERIC_WRITE);
  std::array<std::uint8_t,64> hello{};std::copy(id_.begin(),id_.end(),hello.begin());write_exact(c.get(),hello.data(),hello.size());
