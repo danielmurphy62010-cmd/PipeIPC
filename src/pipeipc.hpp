@@ -73,6 +73,7 @@ using Listener=std::function<void(const std::string&,const Value&)>;
 class ListenerRegistry {
 public:
  void add(std::string,Listener); void remove(const std::string&);
+ bool contains(const std::string&)const;
  void dispatch(const std::string&,const Value&)const;
 private:
  mutable std::mutex mutex_; std::map<std::string,std::shared_ptr<Listener>> listeners_;
