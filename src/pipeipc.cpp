@@ -7,6 +7,7 @@
 #include <array>
 #include <bit>
 #include <stdexcept>
+#include <optional>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -40,12 +41,17 @@ Bytes encode_ack(const ProtocolSecrets&s,const FrameHeader&h,char status){if(sta
 
 
 namespace pipeipc {
-void ListenerRegistry::add(std::string l,Listener cb){if(l.empty()||!cb)throw std::invalid_argument("label and callback required");std::lock_guard g(mutex_);listeners_[std::move(l)]=std::move(cb);}
+void ListenerRegistry::add(std::string l,Listener cb){
+ if(l.empty()||!cb)throw std::invalid_argument("label and callback required");
+ auto item=std::make_shared<Listener>(std::move(cb));
+ std::lock_guard g(mutex_);listeners_[std::move(l)]=std::move(item);
+}
 void ListenerRegistry::remove(const std::string&l){std::lock_guard g(mutex_);listeners_.erase(l);}
-void ListenerRegistry::dispatch(const std::string&l,const Bytes&p)const{std::vector<Listener> calls;{std::lock_guard g(mutex_);for(auto&[k,cb]:listeners_)if(l==k||(l.size()>k.size()&&l.compare(0,k.size(),k)==0&&l[k.size()]=='.'))calls.push_back(cb);}for(auto&cb:calls)cb(l,p);}
-bool ListenerRegistry::claim_reply(std::string l,std::string p,ReplyHandler cb){if(l.empty()||p.empty()||!cb)return false;std::lock_guard g(mutex_);return replies_.emplace(std::move(l),Owner{std::move(p),std::move(cb)}).second;}
-void ListenerRegistry::release_reply(const std::string&l,const std::string&p){std::lock_guard g(mutex_);auto i=replies_.find(l);if(i!=replies_.end()&&i->second.process==p)replies_.erase(i);}
-Bytes ListenerRegistry::request(const std::string&l,const Bytes&p)const{ReplyHandler cb;{std::lock_guard g(mutex_);auto i=replies_.find(l);if(i==replies_.end())throw std::runtime_error("no reply callback registered");cb=i->second.callback;}return cb(p);}
+void ListenerRegistry::dispatch(const std::string&l,const Bytes&p)const{
+ std::vector<std::shared_ptr<Listener>> calls;
+ {std::lock_guard g(mutex_);for(auto&[k,cb]:listeners_)if(l==k||(l.size()>k.size()&&l.compare(0,k.size(),k)==0&&l[k.size()]=='.'))calls.push_back(cb);}
+ for(auto&cb:calls){try{(*cb)(l,p);}catch(...){}}
+}
 }
 
 
@@ -57,6 +63,17 @@ std::wstring peerpipe(const Options&o,const std::string&id,const wchar_t*ch){ret
 std::string make_id(){GUID g{};if(CoCreateGuid(&g)!=S_OK)throw std::runtime_error("CoCreateGuid failed");wchar_t w[40]{};if(!StringFromGUID2(g,w,40))throw std::runtime_error("StringFromGUID2 failed");char b[40]{};int n=WideCharToMultiByte(CP_UTF8,0,w,-1,b,sizeof(b),nullptr,nullptr);if(!n)throw std::runtime_error("GUID conversion failed");return std::string(b,std::size_t(n-1));}
 Bytes read_frame(HANDLE h,const ProtocolSecrets&s){std::array<std::uint8_t,92> head{};read_exact(h,head.data(),head.size());if(!std::equal(s.magic1.begin(),s.magic1.end(),head.begin()))throw std::runtime_error("bad frame magic");std::uint32_t n=0;for(int i=0;i<4;i++)n|=std::uint32_t(head[8+i])<<(8*i);if(n>max_payload_size)throw std::runtime_error("frame exceeds limit");Bytes wire(head.begin(),head.end());wire.resize(100+n);read_exact(h,wire.data()+92,n+8);return wire;}
 void write_wire(HANDLE h,const Bytes&b){write_exact(h,b.data(),b.size());}
+constexpr const char* shared_topic="__pipeipc.shared";
+const std::array<std::uint8_t,8>& shared_channel(){static const auto id=listener_hash(shared_topic);return id;}
+void u32(Bytes&b,std::uint32_t v){for(int i=0;i<4;i++)b.push_back(std::uint8_t(v>>(8*i)));}
+std::uint32_t take32(const Bytes&b,std::size_t&p){if(p+4>b.size())throw std::runtime_error("truncated IPC command");std::uint32_t v=0;for(int i=0;i<4;i++)v|=std::uint32_t(b[p++])<<(8*i);return v;}
+std::uint64_t take64(const Bytes&b,std::size_t&p){if(p+8>b.size())throw std::runtime_error("truncated IPC command");std::uint64_t v=0;for(int i=0;i<8;i++)v|=std::uint64_t(b[p++])<<(8*i);return v;}
+void u64(Bytes&b,std::uint64_t v){for(int i=0;i<8;i++)b.push_back(std::uint8_t(v>>(8*i)));}
+void text_blob(Bytes&b,const std::string&v){if(v.size()>max_payload_size)throw std::runtime_error("shared variable key too long");u32(b,std::uint32_t(v.size()));b.insert(b.end(),v.begin(),v.end());}
+std::string take_text(const Bytes&b,std::size_t&p){auto n=take32(b,p);if(n>b.size()-p)throw std::runtime_error("invalid shared key length");std::string r(reinterpret_cast<const char*>(b.data()+p),n);p+=n;return r;}
+Bytes make_shared_set(const std::string&key,const Value&value){Bytes out{1};text_blob(out,key);auto v=encode_value(value);u32(out,std::uint32_t(v.size()));out.insert(out.end(),v.begin(),v.end());return out;}
+Bytes make_shared_delete(const std::string&key){Bytes out{2};text_blob(out,key);return out;}
+Bytes make_shared_snapshot_request(){return Bytes{3};}
 }
 struct Server::Peer {
  std::string id; ProtocolSecrets secrets; Handle tx,rx,txack,rxack;
@@ -76,10 +93,48 @@ void Server::stop(){
  for(auto&p:peers){if(p->tx.valid())CancelIoEx(p->tx.get(),nullptr);if(p->rx.valid())CancelIoEx(p->rx.get(),nullptr);if(p->txack.valid())CancelIoEx(p->txack.get(),nullptr);if(p->rxack.valid())CancelIoEx(p->rxack.get(),nullptr);}
  for(auto&p:peers){if(p->reader.joinable())p->reader.join();if(p->writer.joinable())p->writer.join();if(p->ackreader.joinable())p->ackreader.join();}
 }
-void Server::publish(const std::string&label,const Bytes&payload){
- auto frame=encode_frame(secrets_,next_mid_++,listener_hash(label),payload);
+void Server::enqueue(const std::shared_ptr<Peer>&p,Bytes b){
+ std::lock_guard q(p->out_mutex);
+ if(!p->live)return;
+ if(p->queued_bytes+b.size()>options_.max_queue_bytes){p->live=false;p->cv.notify_all();return;}
+ p->queued_bytes+=b.size();p->out.push_back(std::move(b));p->cv.notify_one();
+}
+void Server::broadcast(const Bytes&b){
  std::lock_guard g(peers_mutex_);
- for(auto&[id,p]:peers_){std::lock_guard q(p->out_mutex);if(p->queued_bytes+frame.size()>options_.max_queue_bytes){p->live=false;p->cv.notify_all();continue;}p->queued_bytes+=frame.size();p->out.push_back(frame);p->cv.notify_one();}
+ for(auto&[id,p]:peers_)enqueue(p,b);
+}
+void Server::publish(const std::string&label,const Bytes&payload){
+ if(label.empty())throw std::invalid_argument("message label cannot be empty");
+ if(listener_hash(label)==shared_channel())throw std::invalid_argument("reserved PipeIPC label");
+ broadcast(encode_frame(secrets_,next_mid_++,listener_hash(label),payload));
+}
+void Server::send(const std::string&label,const Value&value){publish(label,encode_value(value));}
+void Server::handle_shared_command(const std::shared_ptr<Peer>&requester,const Bytes&command){
+ if(command.empty())throw std::runtime_error("empty shared-variable command");
+ std::size_t pos=1;
+ const auto op=command[0];
+ std::lock_guard state_lock(shared_mutex_);
+ Bytes event;
+ if(op==3){
+  if(command.size()!=1)throw std::runtime_error("invalid snapshot request");
+  event.push_back(0x81);u64(event,shared_revision_);u32(event,std::uint32_t(shared_values_.size()));
+  for(const auto&[key,value]:shared_values_){text_blob(event,key);auto v=encode_value(value);u32(event,std::uint32_t(v.size()));event.insert(event.end(),v.begin(),v.end());}
+  enqueue(requester,encode_frame(secrets_,next_mid_++,shared_channel(),event));
+  return;
+ }
+ if(op==1){
+  auto key=take_text(command,pos);if(key.empty())throw std::runtime_error("empty shared-variable key");
+  auto n=take32(command,pos);if(n>command.size()-pos||pos+n!=command.size())throw std::runtime_error("invalid shared value length");
+  Bytes raw(command.begin()+pos,command.end());auto value=decode_value(raw);
+  shared_values_[key]=std::move(value);++shared_revision_;
+  event.push_back(0x82);u64(event,shared_revision_);text_blob(event,key);u32(event,n);event.insert(event.end(),raw.begin(),raw.end());
+ }else if(op==2){
+  auto key=take_text(command,pos);if(key.empty()||pos!=command.size())throw std::runtime_error("invalid shared-variable delete");
+  shared_values_.erase(key);++shared_revision_;
+  event.push_back(0x83);u64(event,shared_revision_);text_blob(event,key);
+ }else throw std::runtime_error("unknown shared-variable command");
+ auto frame=encode_frame(secrets_,next_mid_++,shared_channel(),event);
+ broadcast(frame);
 }
 void Server::accept_loop(){
  while(running_){try{
@@ -97,7 +152,12 @@ void Server::accept_loop(){
   attach(p->tx);attach(p->rx);attach(p->txack);attach(p->rxack);
   {std::lock_guard g(peers_mutex_);peers_[id]=p;}
   p->writer=std::thread([this,p]{while(p->live){Bytes b;{std::unique_lock l(p->out_mutex);p->cv.wait(l,[&]{return !p->live||!p->out.empty();});if(!p->live)break;b=std::move(p->out.front());p->out.pop_front();p->queued_bytes-=b.size();}try{write_wire(p->rx.get(),b);}catch(...){p->live=false;break;}}});
-  p->reader=std::thread([this,p]{while(p->live){try{auto b=read_frame(p->tx.get(),p->secrets);auto f=decode_frame(p->secrets,b);auto ack=encode_ack(p->secrets,f.header,'1');write_wire(p->rxack.get(),ack);write_wire(p->rxack.get(),encode_ack(p->secrets,f.header,'2'));std::lock_guard g(peers_mutex_);for(auto&[id,q]:peers_){std::lock_guard l(q->out_mutex);if(q->queued_bytes+b.size()>options_.max_queue_bytes){q->live=false;q->cv.notify_all();continue;}q->out.push_back(b);q->queued_bytes+=b.size();q->cv.notify_one();}}catch(...){p->live=false;p->cv.notify_all();break;}}});
+  p->reader=std::thread([this,p]{while(p->live){try{
+   auto b=read_frame(p->tx.get(),p->secrets);auto f=decode_frame(p->secrets,b);
+   write_wire(p->rxack.get(),encode_ack(p->secrets,f.header,'1'));write_wire(p->rxack.get(),encode_ack(p->secrets,f.header,'2'));
+   if(f.header.listener_id==shared_channel()){try{handle_shared_command(p,f.payload);}catch(...){}}
+   else broadcast(b);
+  }catch(...){p->live=false;p->cv.notify_all();break;}}});
   p->ackreader=std::thread([p]{while(p->live){try{std::array<std::uint8_t,101>a{};read_exact(p->txack.get(),a.data(),a.size());}catch(...){p->live=false;break;}}});
  }catch(...){if(!running_)break;Sleep(20);}}
 }
@@ -125,7 +185,8 @@ void Client::disconnect(){
 }
 void Client::on(std::string l,Listener cb){auto id=listener_hash(l);{std::lock_guard g(label_mutex_);labels_[id]=l;}listeners_.add(std::move(l),std::move(cb));}
 void Client::off(const std::string&l){listeners_.remove(l);auto id=listener_hash(l);std::lock_guard g(label_mutex_);labels_.erase(id);}
-void Client::publish(const std::string&l,const Bytes&p){if(!connected_)throw std::runtime_error("disconnected");auto b=encode_frame(secrets_,next_mid_++,listener_hash(l),p);std::lock_guard g(send_mutex_);write_wire(tx_->get(),b);}
+void Client::publish(const std::string&l,const Bytes&p){if(!connected_)throw std::runtime_error("disconnected");if(l.empty())throw std::invalid_argument("message label cannot be empty");if(listener_hash(l)==shared_channel())throw std::invalid_argument("reserved PipeIPC label");auto b=encode_frame(secrets_,next_mid_++,listener_hash(l),p);std::lock_guard g(send_mutex_);write_wire(tx_->get(),b);}
+void Client::send(const std::string&l,const Value&v){publish(l,encode_value(v));}
 void Client::request(const std::string&,const Bytes&,std::function<void(Bytes)>){throw std::runtime_error("request/reply protocol is not implemented");}
 bool Client::claim_reply(const std::string&,ReplyHandler){throw std::runtime_error("cross-process reply ownership is not implemented");}
 void Client::release_reply(const std::string&){}
@@ -135,14 +196,54 @@ void Client::ack_loop(){while(connected_){try{std::array<std::uint8_t,101>a{};re
 
 
 namespace pipeipc {
-SharedVars::SharedVars(std::string l,std::string p,bool c):label_(std::move(l)),process_(std::move(p)),creator_(c){if(label_.empty()||process_.empty())throw std::invalid_argument("label and process id required");}
-void SharedVars::write(std::string k,Value v){if(!creator_)throw std::runtime_error("only creator may mutate shared variables");if(k.empty()||k.front()=='_')throw std::invalid_argument("invalid shared variable name");std::lock_guard g(mutex_);vars_[std::move(k)]=std::move(v);}
-Value SharedVars::read(const std::string&k)const{std::lock_guard g(mutex_);auto i=vars_.find(k);if(i==vars_.end())throw std::out_of_range("unknown shared variable");return i->second;}
-void SharedVars::erase(const std::string&k){if(!creator_)throw std::runtime_error("only creator may mutate shared variables");std::lock_guard g(mutex_);vars_.erase(k);}
-bool SharedVars::contains(const std::string&k)const{std::lock_guard g(mutex_);return vars_.contains(k);}
-std::map<std::string,Value> SharedVars::snapshot()const{std::lock_guard g(mutex_);return vars_;}
-void SharedVars::install_snapshot(std::map<std::string,Value>s){if(creator_)throw std::runtime_error("creator cannot install remote snapshot");std::lock_guard g(mutex_);vars_=std::move(s);}
-std::map<std::string,Value> SharedVars::handle_snapshot_request()const{if(!creator_)throw std::runtime_error("only creator handles variable requests");return snapshot();}
+SharedVars::SharedVars(Client&client,std::chrono::milliseconds timeout):client_(&client){
+ if(!client.connected())throw std::runtime_error("client must be connected before creating SharedVars");
+ client_->on("__pipeipc.shared",[this](const std::string&,const Bytes&b){receive(b);});
+ try{
+  client_->publish("__pipeipc.shared",make_shared_snapshot_request());
+  std::unique_lock lock(mutex_);
+  if(!cv_.wait_for(lock,timeout,[this]{return ready_;}))throw std::runtime_error("timed out waiting for shared-variable snapshot");
+ }catch(...){client_->off("__pipeipc.shared");throw;}
+}
+SharedVars::~SharedVars(){if(client_)client_->off("__pipeipc.shared");}
+void SharedVars::receive(const Bytes&b){
+ try{
+  if(b.empty())return;std::size_t pos=1;auto op=b[0];
+  std::lock_guard lock(mutex_);
+  if(op==0x81){
+   auto rev=take64(b,pos);auto count=take32(b,pos);std::map<std::string,Value> fresh;
+   if(count>max_payload_size)throw std::runtime_error("shared snapshot too large");
+   while(count--){auto key=take_text(b,pos);auto n=take32(b,pos);if(n>b.size()-pos)throw std::runtime_error("invalid snapshot value length");Bytes raw(b.begin()+pos,b.begin()+pos+n);pos+=n;fresh.emplace(std::move(key),decode_value(raw));}
+   if(pos!=b.size())throw std::runtime_error("trailing snapshot data");
+   if(rev>=revision_){vars_=std::move(fresh);revision_=rev;}
+   ready_=true;cv_.notify_all();return;
+  }
+  if(op==0x82){
+   auto rev=take64(b,pos);auto key=take_text(b,pos);auto n=take32(b,pos);if(n>b.size()-pos||pos+n!=b.size())throw std::runtime_error("invalid shared update");
+   if(rev>revision_){Bytes raw(b.begin()+pos,b.end());vars_[key]=decode_value(raw);revision_=rev;}cv_.notify_all();return;
+  }
+  if(op==0x83){
+   auto rev=take64(b,pos);auto key=take_text(b,pos);if(pos!=b.size())throw std::runtime_error("invalid shared delete");
+   if(rev>revision_){vars_.erase(key);revision_=rev;}cv_.notify_all();return;
+  }
+ }catch(...){}
+}
+void SharedVars::write(std::string key,Value value){
+ if(key.empty())throw std::invalid_argument("shared variable key cannot be empty");
+ auto encoded=make_shared_set(key,value);
+ std::lock_guard lock(mutex_);auto old=vars_.find(key);std::optional<Value> previous;if(old!=vars_.end())previous=old->second;
+ vars_[key]=std::move(value);
+ try{client_->publish("__pipeipc.shared",encoded);}catch(...){if(previous)vars_[key]=std::move(*previous);else vars_.erase(key);throw;}
+}
+Value SharedVars::read(const std::string&key)const{std::lock_guard lock(mutex_);auto i=vars_.find(key);if(i==vars_.end())throw std::out_of_range("unknown shared variable");return i->second;}
+void SharedVars::erase(const std::string&key){
+ Bytes command=make_shared_delete(key);std::lock_guard lock(mutex_);auto old=vars_.find(key);std::optional<Value> previous;if(old!=vars_.end())previous=old->second;vars_.erase(key);
+ try{client_->publish("__pipeipc.shared",command);}catch(...){if(previous)vars_[key]=std::move(*previous);throw;}
+}
+bool SharedVars::contains(const std::string&key)const{std::lock_guard lock(mutex_);return vars_.contains(key);}
+std::map<std::string,Value> SharedVars::snapshot()const{std::lock_guard lock(mutex_);return vars_;}
+bool SharedVars::ready()const{std::lock_guard lock(mutex_);return ready_;}
+std::uint64_t SharedVars::revision()const{std::lock_guard lock(mutex_);return revision_;}
 }
 
 
