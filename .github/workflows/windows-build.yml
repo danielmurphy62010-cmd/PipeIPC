@@ -53,7 +53,8 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force build/java | Out-Null
           javac -d build/java bindings/java/quickipc/SharedVars.java examples/JavaExample.java
-          java -Djava.library.path="$PWD/build/Release" -cp build/java JavaExample
+          $lib = (Resolve-Path "build/Release").Path
+          java "-Djava.library.path=$lib" -cp build/java JavaExample
       - name: Upload executables and bindings
         if: success()
         uses: actions/upload-artifact@v4
