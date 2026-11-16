@@ -29,13 +29,13 @@ curl -fsSL "https://raw.githubusercontent.com/BLAKE3-team/BLAKE3/1.5.5/c/blake3_
 
 echo Compiling...
 cl /nologo /c /TC /O2 /MD /DBLAKE3_NO_SSE2 /DBLAKE3_NO_SSE41 /DBLAKE3_NO_AVX2 /DBLAKE3_NO_AVX512 /Iblake3 blake3\blake3.c blake3\blake3_dispatch.c blake3\blake3_portable.c || goto :fail
-cl /nologo /c /std:c++20 /O2 /EHsc /MD /W3 /permissive- /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I.. /Iblake3 ..\quickipc.cpp || goto :fail
+cl /nologo /c /std:c++20 /O2 /EHsc /MD /W3 /permissive- /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I..\src /Iblake3 ..\src\quickipc.cpp || goto :fail
 
 echo Building C++ example...
-cl /nologo /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I.. ..\example.cpp quickipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /Fe:quickipc.exe || goto :fail
+cl /nologo /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I..\src ..\src\example.cpp quickipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /Fe:quickipc.exe || goto :fail
 
 echo Running C++ tests...
-cl /nologo /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I.. ..\tests.cpp quickipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /Fe:quickipc_tests.exe || goto :fail
+cl /nologo /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I..\src ..\src\tests.cpp quickipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /Fe:quickipc_tests.exe || goto :fail
 quickipc_tests.exe || goto :fail
 
 where python >nul 2>&1
@@ -46,20 +46,30 @@ for /f "delims=" %%I in ('python -c "import pybind11; print(pybind11.get_include
 for /f "delims=" %%I in ('python -c "import sysconfig; print(sysconfig.get_path('include'))"') do set "PY_INC=%%I"
 for /f "delims=" %%I in ('python -c "import sysconfig,sys,os; print(sysconfig.get_config_var('LIBDIR') or os.path.join(sys.base_prefix,'libs'))"') do set "PY_LIB=%%I"
 for /f "delims=" %%I in ('python -c "import sys; print('.'.join(map(str,sys.version_info[:3])))"') do set "PY_VER=%%I"
-for /f "delims=" %%I in ('python -c "import sysconfig,sys; print(sysconfig.get_config_var('LIBRARY') or ('python%%d%%d.lib' %% sys.version_info[:2]))"') do set "PY_LIBFILE=%%I"
-if not exist "%PY_INC%\Python.h" (set "PY_STATUS=skipped - Python.h missing"&echo Python development headers unavailable; skipping binding.&goto :java)
-if not exist "%PY_LIB%\%PY_LIBFILE%" (
-  echo Python import library missing; fetching matching CPython %PY_VER% development package...
-  curl -fsSL "https://api.nuget.org/v3-flatcontainer/python/%PY_VER%/python.%PY_VER%.nupkg" -o python-dev.nupkg
-  if errorlevel 1 (set "PY_STATUS=skipped - CPython dev package unavailable"&echo Matching Python development package unavailable; skipping binding.&goto :java)
-  mkdir python-dev 2>nul
-  tar -xf python-dev.nupkg -C python-dev || goto :fail
-  set "PY_INC=%CD%\python-dev\tools\include"
-  set "PY_LIB=%CD%\python-dev\tools\libs"
+for /f "delims=" %%I in ('python -c "import sys; print('python' + str(sys.version_info[0]) + str(sys.version_info[1]) + '.lib')"') do set "PY_LIBFILE=%%I"
+for /f "delims=" %%I in ('python -c "import os,sys; print(os.path.abspath(os.path.join(os.path.dirname(sys.executable), '..', 'python' + str(sys.version_info[0]) + str(sys.version_info[1]) + '.dll')))"') do set "PY_DLL=%%I"
+
+if not exist "%PY_DLL%" (
+  set "PY_STATUS=skipped - Python runtime DLL missing"
+  echo Python runtime DLL not found at "%PY_DLL%"; expected next to the Python installation root.
+  goto :java
 )
-if not exist "%PY_INC%\Python.h" (set "PY_STATUS=skipped - Python.h missing"&echo Python.h unavailable; skipping binding.&goto :java)
-if not exist "%PY_LIB%\%PY_LIBFILE%" (set "PY_STATUS=skipped - %PY_LIBFILE% unavailable"&echo %PY_LIBFILE% unavailable; skipping binding.&goto :java)
-cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I.. /Iblake3 /I"%PY_INC%" /I"%PYBIND_INC%" ..\module.cpp quickipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /link /LIBPATH:"%PY_LIB%" "%PY_LIBFILE%" /OUT:quickipc.pyd || goto :fail
+for %%I in ("%PY_DLL%") do set "PY_DLL_DIR=%%~dpI"
+set "PATH=%PY_DLL_DIR%;%PATH%"
+
+if exist "%PY_INC%\Python.h" if exist "%PY_LIB%\%PY_LIBFILE%" goto :py_ready
+echo Fetching matching CPython %PY_VER% development package...
+curl -fsSL "https://api.nuget.org/v3-flatcontainer/python/%PY_VER%/python.%PY_VER%.nupkg" -o python-dev.nupkg
+if errorlevel 1 (set "PY_STATUS=skipped - CPython dev package unavailable"&echo Matching Python development package unavailable; skipping binding.&goto :java)
+mkdir python-dev 2>nul
+tar -xf python-dev.nupkg -C python-dev || goto :fail
+set "PY_INC=%CD%\python-dev\tools\include"
+set "PY_LIB=%CD%\python-dev\tools\libs"
+
+:py_ready
+if not exist "%PY_INC%\Python.h" (set "PY_STATUS=skipped - Python.h unavailable"&echo Python.h unavailable; skipping binding.&goto :java)
+if not exist "%PY_LIB%\%PY_LIBFILE%" (set "PY_STATUS=skipped - %PY_LIBFILE% unavailable"&echo Python import library "%PY_LIBFILE%" unavailable; skipping binding.&goto :java)
+cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I..\src /Iblake3 /I"%PY_INC%" /I"%PYBIND_INC%" ..\src\module.cpp quickipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /link /LIBPATH:"%PY_LIB%" "%PY_LIBFILE%" /OUT:quickipc.pyd || goto :fail
 set "PYTHONPATH=%CD%"
 python -c "from quickipc import SharedVars; s=SharedVars('ci'); s.payload={'x':[1,2.5,True]}; assert s.payload['x'][0] == 1; del s.payload; assert 'payload' not in s" || goto :fail
 set "PY_STATUS=built"
@@ -68,9 +78,9 @@ set "PY_STATUS=built"
 if not exist "%JBIN%\javac.exe" (set "JAVA_STATUS=skipped - JDK javac.exe missing"&echo JDK javac.exe missing; skipping Java binding.&goto :copy)
 if not exist "%JAVA_HOME%\include\jni.h" (set "JAVA_STATUS=skipped - JDK JNI headers missing"&echo JDK JNI headers unavailable; skipping Java binding.&goto :copy)
 echo Building Java binding...
-cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I.. /I"%JAVA_HOME%\include" /I"%JAVA_HOME%\include\win32" ..\jni.cpp quickipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /Fe:quickipc_jni.dll || goto :fail
+cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I..\src /I"%JAVA_HOME%\include" /I"%JAVA_HOME%\include\win32" ..\src\jni.cpp quickipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /Fe:quickipc_jni.dll || goto :fail
 mkdir java 2>nul
-"%JBIN%\javac.exe" -d java ..\SharedVars.java ..\JavaExample.java || goto :fail
+"%JBIN%\javac.exe" -d java ..\src\SharedVars.java ..\src\JavaExample.java || goto :fail
 "%JBIN%\java.exe" "-Djava.library.path=%CD%" -cp java JavaExample || goto :fail
 "%JBIN%\jar.exe" cf quickipc.jar -C java . || goto :fail
 set "JAVA_STATUS=built"
