@@ -106,6 +106,7 @@ void Server::stop(){
  {std::lock_guard g(peers_mutex_);for(auto&[id,p]:peers_){p->live=false;p->cv.notify_all();peers.push_back(p);}peers_.clear();}
  for(auto&p:peers){if(p->tx.valid())CancelIoEx(p->tx.get(),nullptr);if(p->rx.valid())CancelIoEx(p->rx.get(),nullptr);if(p->txack.valid())CancelIoEx(p->txack.get(),nullptr);if(p->rxack.valid())CancelIoEx(p->rxack.get(),nullptr);}
  for(auto&p:peers){if(p->reader.joinable())p->reader.join();if(p->writer.joinable())p->writer.join();if(p->ackreader.joinable())p->ackreader.join();}
+ {std::lock_guard state_lock(shared_mutex_);shared_values_.clear();shared_revision_=0;}
 }
 void Server::enqueue(const std::shared_ptr<Peer>&p,Bytes b){
  std::lock_guard q(p->out_mutex);
