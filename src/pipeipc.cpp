@@ -223,9 +223,12 @@ void Client::disconnect(){
  if(rx_thread_.joinable())rx_thread_.join();if(ack_thread_.joinable())ack_thread_.join();
  tx_.reset();rx_.reset();txack_.reset();rxack_.reset();
 }
-void Client::on(std::string l,Listener cb){auto id=listener_hash(l);{std::lock_guard g(label_mutex_);labels_[id]=l;}listeners_.add(std::move(l),std::move(cb));}
-void Client::off(const std::string&l){listeners_.remove(l);auto id=listener_hash(l);std::lock_guard g(label_mutex_);labels_.erase(id);}
-void Client::publish(const std::string&l,const Bytes&p){if(!connected_)throw std::runtime_error("disconnected");if(l.empty())throw std::invalid_argument("message label cannot be empty");auto b=encode_frame(secrets_,next_mid_++,listener_hash(l),p);std::lock_guard g(send_mutex_);write_wire(tx_->get(),b);}
+void Client::on(std::string l,Listener cb){if(l=="__pipeipc.shared")throw std::invalid_argument("reserved PipeIPC label");auto id=listener_hash(l);{std::lock_guard g(label_mutex_);labels_[id]=l;}listeners_.add(std::move(l),std::move(cb));}
+void Client::off(const std::string&l){if(l=="__pipeipc.shared")throw std::invalid_argument("reserved PipeIPC label");listeners_.remove(l);auto id=listener_hash(l);std::lock_guard g(label_mutex_);labels_.erase(id);}
+void Client::publish(const std::string&l,const Bytes&p){if(!connected_)throw std::runtime_error("disconnected");if(l.empty())throw std::invalid_argument("message label cannot be empty");if(l=="__pipeipc.shared")throw std::invalid_argument("reserved PipeIPC label");auto b=encode_frame(secrets_,next_mid_++,listener_hash(l),p);std::lock_guard g(send_mutex_);write_wire(tx_->get(),b);}
+void Client::publish_shared(const Bytes&p){if(!connected_)throw std::runtime_error("disconnected");auto b=encode_frame(secrets_,next_mid_++,shared_channel(),p);std::lock_guard g(send_mutex_);write_wire(tx_->get(),b);}
+void Client::on_shared(Listener cb){auto id=shared_channel();{std::lock_guard g(label_mutex_);labels_[id]="__pipeipc.shared";}listeners_.add("__pipeipc.shared",std::move(cb));}
+void Client::off_shared(){listeners_.remove("__pipeipc.shared");std::lock_guard g(label_mutex_);labels_.erase(shared_channel());}
 void Client::send(const std::string&l,const Value&v){publish(l,encode_value(v));}
 void Client::receive_loop(){while(connected_){try{auto b=read_frame(rx_->get(),secrets_);auto f=decode_frame(secrets_,b);std::string label;{std::lock_guard g(label_mutex_);auto i=labels_.find(f.header.listener_id);if(i!=labels_.end())label=i->second;}if(!label.empty())listeners_.dispatch(label,f.payload);auto ack=encode_ack(secrets_,f.header,'1');write_wire(txack_->get(),ack);write_wire(txack_->get(),encode_ack(secrets_,f.header,'2'));}catch(...){if(connected_)connected_=false;break;}}}
 void Client::ack_loop(){while(connected_){try{std::array<std::uint8_t,101>a{};read_exact(rxack_->get(),a.data(),a.size());}catch(...){if(connected_)connected_=false;break;}}}
@@ -235,12 +238,12 @@ void Client::ack_loop(){while(connected_){try{std::array<std::uint8_t,101>a{};re
 namespace pipeipc {
 SharedVars::SharedVars(Client&client,std::chrono::milliseconds timeout):client_(&client){
  if(!client.connected())throw std::runtime_error("client must be connected before creating SharedVars");
- client_->on("__pipeipc.shared",[this](const std::string&,const Bytes&b){receive(b);});
+ client_->on_shared([this](const std::string&,const Bytes&b){receive(b);});
  try{
-  client_->publish("__pipeipc.shared",make_shared_snapshot_request());
+  client_->publish_shared(make_shared_snapshot_request());
   std::unique_lock lock(mutex_);
   if(!cv_.wait_for(lock,timeout,[this]{return ready_;}))throw std::runtime_error("timed out waiting for shared-variable snapshot");
- }catch(...){client_->off("__pipeipc.shared");throw;}
+ }catch(...){client_->off_shared();throw;}
 }
 SharedVars::~SharedVars(){if(client_)client_->off("__pipeipc.shared");}
 void SharedVars::receive(const Bytes&b){
@@ -270,13 +273,13 @@ void SharedVars::write(std::string key,Value value){
  auto encoded=make_shared_set(key,value);
  std::lock_guard lock(mutex_);auto old=vars_.find(key);std::optional<Value> previous;if(old!=vars_.end())previous=old->second;
  vars_[key]=std::move(value);
- try{client_->publish("__pipeipc.shared",encoded);}catch(...){if(previous)vars_[key]=std::move(*previous);else vars_.erase(key);throw;}
+ try{client_->publish_shared(encoded);}catch(...){if(previous)vars_[key]=std::move(*previous);else vars_.erase(key);throw;}
 }
 Value SharedVars::read(const std::string&key)const{std::lock_guard lock(mutex_);auto i=vars_.find(key);if(i==vars_.end())throw std::out_of_range("unknown shared variable");return i->second;}
 void SharedVars::erase(const std::string&key){
  if(key.empty())throw std::invalid_argument("shared variable key cannot be empty");
  Bytes command=make_shared_delete(key);std::lock_guard lock(mutex_);auto old=vars_.find(key);std::optional<Value> previous;if(old!=vars_.end())previous=old->second;vars_.erase(key);
- try{client_->publish("__pipeipc.shared",command);}catch(...){if(previous)vars_[key]=std::move(*previous);throw;}
+ try{client_->publish_shared(command);}catch(...){if(previous)vars_[key]=std::move(*previous);throw;}
 }
 bool SharedVars::contains(const std::string&key)const{std::lock_guard lock(mutex_);return vars_.contains(key);}
 std::map<std::string,Value> SharedVars::snapshot()const{std::lock_guard lock(mutex_);return vars_;}
