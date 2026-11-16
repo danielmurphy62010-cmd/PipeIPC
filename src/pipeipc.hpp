@@ -131,6 +131,10 @@ public:
  const std::string& id()const noexcept{return id_;}
 private:
  void receive_loop(); void ack_loop();
+ void publish_shared(const Bytes&);
+ void on_shared(Listener);
+ void off_shared();
+ friend class SharedVars;
  Options options_; std::string id_; ProtocolSecrets secrets_{};
  std::atomic_bool connected_{false}; std::thread rx_thread_,ack_thread_;
  std::unique_ptr<Handle> tx_,rx_,txack_,rxack_;
