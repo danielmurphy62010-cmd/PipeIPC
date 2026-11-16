@@ -36,11 +36,12 @@ public final class JavaExample {
                             "cross-client variable write");
 
                     CountDownLatch handled = new CountDownLatch(1);
-                    second.on("example.message", (label, value) -> {
+                    second.on("example.event", (label, value) -> {
                         System.out.println("on(): " + label + " = " + value);
                         handled.countDown();
                     });
-                    first.send("example.message", Map.of("text", "hello", "count", 3L));
+                    first.send("example.event", Map.of("text", "handled by on"));
+                    first.send("example.recv", Map.of("text", "received by recv"));
 
                     Message message = second.recv(5000);
                     if (message == null) throw new IllegalStateException("recv() timed out");
