@@ -41,7 +41,7 @@ quickipc_tests.exe || goto :fail
 where python >nul 2>&1
 if errorlevel 1 (set "PY_STATUS=skipped - Python not found"&goto :java)
 echo Building Python binding...
-python -c "import pybind11" >nul 2>&1 || python -m pip install --user pybind11==3.1.0 || goto :fail
+python -m pip install --user --upgrade pybind11==3.1.0 || goto :fail
 for /f "delims=" %%I in ('python -c "import pybind11; print(pybind11.get_include())"') do set "PYBIND_INC=%%I"
 for /f "delims=" %%I in ('python -c "import sysconfig; print(sysconfig.get_path('include'))"') do set "PY_INC=%%I"
 for /f "delims=" %%I in ('python -c "import sysconfig,sys,os; print(sysconfig.get_config_var('LIBDIR') or os.path.join(sys.base_prefix,'libs'))"') do set "PY_LIB=%%I"
