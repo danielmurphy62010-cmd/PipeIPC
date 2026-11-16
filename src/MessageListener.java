@@ -1,7 +1,7 @@
 package pipeipc;
 
-/** Receives a labeled message delivered to a PipeIPC client. */
+/** Callback invoked when a message with a subscribed label arrives. */
 @FunctionalInterface
 public interface MessageListener {
-    void onMessage(String label, byte[] payload);
+    void onMessage(String label, Object value);
 }
