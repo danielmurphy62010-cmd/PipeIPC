@@ -2,7 +2,7 @@
 
 PipeIPC is a Windows local IPC library built around named pipes. It provides two independent features over one broker:
 
-- **Messages:** labeled broadcasts between connected clients. A client can also receive messages published by the server.
+- **Messages:** labeled broadcasts between connected clients. The server can also send messages to connected clients.
 - **Shared variables:** a broker-managed key/value store synchronized to every connected client. Any connected client can create, replace, or delete any key; there is no creator-only ownership rule.
 
 The native transport is C++20. Python bindings use pybind11, and Java bindings use JNI.
@@ -15,9 +15,9 @@ The build script downloads the pinned BLAKE3 C implementation and pybind11. Pyth
 
 ## Python
 
-The message API is deliberately small: \`send\`, \`recv\`, and \`on\`.
+The message API is deliberately small: `send`, `recv`, and `on`.
 
-\`\`\`python
+```python
 from pipeipc import Server, Client, SharedVars
 
 server = Server("my-app")
@@ -44,13 +44,13 @@ del state.config
 state.close()
 client.disconnect()
 server.stop()
-\`\`\`
+```
 
-\`send(label, value)\` accepts \`None\`, booleans, signed 64-bit integers, floats, strings, bytes, lists, tuples, sets/frozensets, and dictionaries with string keys. \`recv(timeout_ms=-1)\` blocks until a message arrives or the client disconnects; a nonnegative timeout returns \`None\` when it expires. \`on(label, callback)\` invokes the callback with \`(label, value)\` when that label arrives. Both \`recv\` and \`on\` can be used together.
+`send(label, value)` accepts `None`, booleans, signed 64-bit integers, floats, strings, bytes, lists, tuples, sets/frozensets, and dictionaries with string keys. `recv(timeout_ms=-1)` blocks until a message arrives or the client disconnects; a nonnegative timeout returns `None` when it expires. `on(label, callback)` invokes the callback with `(label, value)` when that label arrives. Both `recv` and `on` can be used together.
 
 ## Java
 
-\`\`\`java
+```java
 import pipeipc.*;
 
 Server server = new Server("my-app");
@@ -71,13 +71,13 @@ try (Client client = new Client("my-app")) {
     }
 }
 server.close();
-\`\`\`
+```
 
-Java message values support null, booleans, integral and floating-point numbers, strings, byte arrays, lists, sets, and maps with string keys. \`Message\` is the value returned by \`Client.recv()\`; \`MessageListener\` is used by \`Client.on()\`.
+Java message values support null, booleans, integral and floating-point numbers, strings, byte arrays, lists, sets, and maps with string keys. `Message` is the value returned by `Client.recv()`; `MessageListener` is used by `Client.on()`.
 
 ## Native C++
 
-\`\`\`cpp
+```cpp
 #include "pipeipc.hpp"
 
 pipeipc::Server server;
@@ -99,9 +99,9 @@ client.on("app.command", [](const std::string& label, const pipeipc::Value& valu
 pipeipc::SharedVars vars(client);
 vars.write("counter", pipeipc::Value(std::int64_t(1)));
 auto current = vars.read("counter");
-\`\`\`
+```
 
-A \`SharedVars\` object requires an already-connected client, waits up to ten seconds for the initial snapshot, and must be destroyed before its C++ \`Client\`. Use one \`SharedVars\` object per client. Values written locally are updated optimistically; the broker then propagates the update to connected clients. Variable updates are asynchronous across clients. Concurrent writes are applied in the order processed by the broker, with the last processed write determining the final value.
+A `SharedVars` object requires an already-connected client, waits up to ten seconds for the initial snapshot, and must be destroyed before its C++ `Client`. Use one `SharedVars` object per client. Values written locally are updated optimistically; the broker then propagates the update to connected clients. Variable updates are asynchronous across clients. Concurrent writes are applied in the order processed by the broker, with the last processed write determining the final value.
 
 ## Behavior and limits
 
