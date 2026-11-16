@@ -223,7 +223,12 @@ void Client::disconnect(){
  if(rx_thread_.joinable())rx_thread_.join();if(ack_thread_.joinable())ack_thread_.join();
  tx_.reset();rx_.reset();txack_.reset();rxack_.reset();
 }
-void Client::on(std::string l,Listener cb){if(l=="__pipeipc.shared")throw std::invalid_argument("reserved PipeIPC label");auto id=listener_hash(l);{std::lock_guard g(label_mutex_);labels_[id]=l;}listeners_.add(std::move(l),std::move(cb));}
+void Client::on(std::string l,Listener cb){
+ if(l.empty()||!cb)throw std::invalid_argument("label and callback required");
+ if(l=="__pipeipc.shared")throw std::invalid_argument("reserved PipeIPC label");
+ auto id=listener_hash(l);listeners_.add(l,std::move(cb));
+ std::lock_guard g(label_mutex_);labels_[id]=std::move(l);
+}
 void Client::off(const std::string&l){if(l=="__pipeipc.shared")throw std::invalid_argument("reserved PipeIPC label");listeners_.remove(l);auto id=listener_hash(l);std::lock_guard g(label_mutex_);labels_.erase(id);}
 void Client::publish(const std::string&l,const Bytes&p){if(!connected_)throw std::runtime_error("disconnected");if(l.empty())throw std::invalid_argument("message label cannot be empty");if(l=="__pipeipc.shared")throw std::invalid_argument("reserved PipeIPC label");auto b=encode_frame(secrets_,next_mid_++,listener_hash(l),p);std::lock_guard g(send_mutex_);write_wire(tx_->get(),b);}
 void Client::publish_shared(const Bytes&p){if(!connected_)throw std::runtime_error("disconnected");auto b=encode_frame(secrets_,next_mid_++,shared_channel(),p);std::lock_guard g(send_mutex_);write_wire(tx_->get(),b);}
