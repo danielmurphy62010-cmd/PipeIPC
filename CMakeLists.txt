@@ -9,11 +9,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(FetchContent)
 FetchContent_Declare(blake3 GIT_REPOSITORY https://github.com/BLAKE3-team/BLAKE3.git GIT_TAG 1.5.5 GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(blake3)
-add_library(quickipc
-  src/value.cpp src/protocol.cpp src/routing.cpp src/shared_vars.cpp
-  src/pipe.cpp src/runtime.cpp)
+add_library(quickipc src/value.cpp src/protocol.cpp src/routing.cpp src/shared_vars.cpp src/pipe.cpp src/runtime.cpp)
 target_include_directories(quickipc PUBLIC include)
-target_link_libraries(quickipc PRIVATE blake3)
+target_link_libraries(quickipc PRIVATE blake3 bcrypt ole32)
 target_compile_definitions(quickipc PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(quickipc PRIVATE /W4 /permissive- /EHsc)
 add_executable(quickipc_server examples/server.cpp)
