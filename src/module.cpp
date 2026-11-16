@@ -28,7 +28,6 @@ static py::object to_py(const Value&v){return std::visit([](const auto&x)->py::o
  else if constexpr(std::is_same_v<T,Bytes>)return py::bytes(reinterpret_cast<const char*>(x.data()),x.size());
  else return py::cast(x);
  },v.data);}
-static Bytes from_bytes(py::bytes value){auto s=value.cast<std::string>();return Bytes(s.begin(),s.end());}
 class PyServer {
  std::unique_ptr<Server> server_;
 public:
