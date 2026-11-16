@@ -3,8 +3,11 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 if not defined MSVC_DIR set "MSVC_DIR=%OneDrive%\APPS\MSVC"
-if not defined JBIN set "JBIN=C:\Program Files\Eclipse IDE\v.25.12\eclipse\plugins\org.eclipse.justj.openjdk.hotspot.jre.full.win32.x86_64_21.0.9.v20251105-0741\jre\bin"
-set "JAVA_HOME=%JBIN%\.."
+if not defined JAVA_HOME (
+  if not defined JBIN set "JBIN=C:\Program Files\Eclipse IDE\v.25.12\eclipse\plugins\org.eclipse.justj.openjdk.hotspot.jre.full.win32.x86_64_21.0.9.v20251105-0741\jre\bin"
+  set "JAVA_HOME=%JBIN%\.."
+)
+if not defined JBIN set "JBIN=%JAVA_HOME%\bin"
 
 if exist "%MSVC_DIR%\setup_x64.bat" call "%MSVC_DIR%\setup_x64.bat" || goto :err
 where cl >nul 2>&1 || (echo cl.exe not found.&goto :err)
