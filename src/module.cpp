@@ -69,13 +69,14 @@ class PySharedVars {
  std::unique_ptr<SharedVars> vars_;
 public:
  explicit PySharedVars(PyClient&client):vars_(std::make_unique<SharedVars>(client.core())){}
- void write(const std::string&k,py::object v){vars_->write(k,from_py(v));}
- py::object read(const std::string&k)const{return to_py(vars_->read(k));}
- void erase(const std::string&k){vars_->erase(k);}
- bool contains(const std::string&k)const{return vars_->contains(k);}
- bool ready()const{return vars_->ready();}
- std::uint64_t revision()const{return vars_->revision();}
- py::dict snapshot()const{py::dict d;for(auto&[k,v]:vars_->snapshot())d[py::str(k)]=to_py(v);return d;}
+ void close(){vars_.reset();}
+ void write(const std::string&k,py::object v){if(!vars_)throw std::runtime_error("SharedVars is closed");vars_->write(k,from_py(v));}
+ py::object read(const std::string&k)const{if(!vars_)throw std::runtime_error("SharedVars is closed");return to_py(vars_->read(k));}
+ void erase(const std::string&k){if(!vars_)throw std::runtime_error("SharedVars is closed");vars_->erase(k);}
+ bool contains(const std::string&k)const{return vars_&&vars_->contains(k);}
+ bool ready()const{return vars_&&vars_->ready();}
+ std::uint64_t revision()const{return vars_?vars_->revision():0;}
+ py::dict snapshot()const{if(!vars_)throw std::runtime_error("SharedVars is closed");py::dict d;for(auto&[k,v]:vars_->snapshot())d[py::str(k)]=to_py(v);return d;}
 };
 PYBIND11_MODULE(pipeipc,m){
  m.doc()="PipeIPC named-pipe messaging and brokered shared variables";
@@ -108,5 +109,6 @@ PYBIND11_MODULE(pipeipc,m){
   .def("get",&PySharedVars::read,py::arg("key"))
   .def("set",&PySharedVars::write,py::arg("key"),py::arg("value"))
   .def("delete",&PySharedVars::erase,py::arg("key"))
-  .def("snapshot",&PySharedVars::snapshot);
+  .def("snapshot",&PySharedVars::snapshot)
+  .def("close",&PySharedVars::close);
 }
