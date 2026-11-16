@@ -28,9 +28,30 @@ def main():
             wait_until(lambda: second_vars.get("status") == {"owner": "first", "ready": True},
                        "first client's shared-variable update")
 
-            second_vars.status = "changed by the second client"
-            wait_until(lambda: first_vars.get("status") == "changed by the second client",
-                       "second client's write to the same variable")
+            # Mutate nested values in place; no reassignment is required.
+            first_vars.status["ready"] = False
+            first_vars.status["history"] = []
+            first_vars.status["history"].append("started")
+            first_vars.status["labels"] = {"alpha"}
+            first_vars.status["labels"].add("beta")
+            wait_until(
+                lambda: second_vars.get("status", {}).get("history") == ["started"]
+                and second_vars.get("status", {}).get("ready") is False
+                and second_vars.get("status", {}).get("labels") == {"alpha", "beta"},
+                "nested dict, list, and set mutations",
+            )
+
+            # Deleting the actual instance attribute removes the shared key.
+            del first_vars.status
+            wait_until(lambda: not second_vars.contains("status"),
+                       "shared-variable deletion")
+
+            second_vars.status = {"owner": "second", "items": [1]}
+            second_vars.status["items"].extend([2, 3])
+            wait_until(
+                lambda: first_vars.get("status", {}).get("items") == [1, 2, 3],
+                "second client's in-place list mutation",
+            )
 
             received = threading.Event()
             handled = []
@@ -48,7 +69,8 @@ def main():
             print("on():", handled[0])
             print("Shared variables:", first_vars.snapshot())
         finally:
-            first_vars.delete("status")
+            if first_vars.contains("status"):
+                del first_vars.status
             first_vars.close()
             second_vars.close()
             first.disconnect()
