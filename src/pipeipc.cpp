@@ -74,7 +74,7 @@ namespace {
 std::wstring base(const Options&o){return L"\\\\.\\pipe\\PipeIPC."+o.name;}
 std::wstring ctl(const Options&o){return base(o)+L".control";}
 std::wstring peerpipe(const Options&o,const std::string&id,const wchar_t*ch){return base(o)+L"."+std::wstring(id.begin(),id.end())+L"."+ch;}
-std::string make_id(){GUID g{};if(CoCreateGuid(&g)!=S_OK)throw std::runtime_error("CoCreateGuid failed");wchar_t w[40]{};if(!StringFromGUID2(g,w,40))throw std::runtime_error("StringFromGUID2 failed");char b[40]{};int n=WideCharToMultiByte(CP_UTF8,0,w,-1,b,sizeof(b),nullptr,nullptr);if(!n)throw std::runtime_error("GUID conversion failed");return std::string(b,std::size_t(n-1));}
+std::string make_id(){GUID g{};if(CoCreateGuid(&g)!=S_OK)throw std::runtime_error("CoCreateGuid failed");wchar_t w[40]{};if(!StringFromGUID2(g,w,40))throw std::runtime_error("StringFromGUID2 failed");char b[40]{};int n=WideCharToMultiByte(CP_UTF8,0,w,-1,b,sizeof(b),nullptr,nullptr);if(!n)throw std::runtime_error("GUID conversion failed");std::string id(b,std::size_t(n-1));if(id.size()==38&&id.front()=='{'&&id.back()=='}')id=id.substr(1,36);return id;}
 Bytes read_frame(HANDLE h,const ProtocolSecrets&s){std::array<std::uint8_t,92> head{};read_exact(h,head.data(),head.size());if(!std::equal(s.magic1.begin(),s.magic1.end(),head.begin()))throw std::runtime_error("bad frame magic");std::uint32_t n=0;for(int i=0;i<4;i++)n|=std::uint32_t(head[8+i])<<(8*i);if(n>max_payload_size)throw std::runtime_error("frame exceeds limit");Bytes wire(head.begin(),head.end());wire.resize(100+n);read_exact(h,wire.data()+92,n+8);return wire;}
 void write_wire(HANDLE h,const Bytes&b){write_exact(h,b.data(),b.size());}
 constexpr const char* shared_topic="__pipeipc.shared";
@@ -110,8 +110,17 @@ void Server::stop(){
 void Server::enqueue(const std::shared_ptr<Peer>&p,Bytes b){
  std::lock_guard q(p->out_mutex);
  if(!p->live)return;
- if(p->queued_bytes+b.size()>options_.max_queue_bytes){p->live=false;p->cv.notify_all();return;}
+ if(p->queued_bytes+b.size()>options_.max_queue_bytes){
+  p->live=false;p->cv.notify_all();
+  for(auto*h:{&p->tx,&p->rx,&p->txack,&p->rxack})if(h->valid())CancelIoEx(h->get(),nullptr);
+  return;
+ }
  p->queued_bytes+=b.size();p->out.push_back(std::move(b));p->cv.notify_one();
+}
+void Server::remove_peer(const std::shared_ptr<Peer>&p){
+ p->live=false;p->cv.notify_all();
+ for(auto*h:{&p->tx,&p->rx,&p->txack,&p->rxack})if(h->valid())CancelIoEx(h->get(),nullptr);
+ std::lock_guard g(peers_mutex_);auto i=peers_.find(p->id);if(i!=peers_.end()&&i->second==p)peers_.erase(i);
 }
 void Server::broadcast(const Bytes&b){
  std::lock_guard g(peers_mutex_);
@@ -171,7 +180,9 @@ void Server::accept_loop(){
    write_wire(p->rxack.get(),encode_ack(p->secrets,f.header,'1'));write_wire(p->rxack.get(),encode_ack(p->secrets,f.header,'2'));
    if(f.header.listener_id==shared_channel()){try{handle_shared_command(p,f.payload);}catch(...){}}
    else broadcast(b);
-  }catch(...){p->live=false;p->cv.notify_all();break;}}});
+  }catch(...){p->live=false;p->cv.notify_all();break;}}
+  remove_peer(p);
+ });
   p->ackreader=std::thread([p]{while(p->live){try{std::array<std::uint8_t,101>a{};read_exact(p->txack.get(),a.data(),a.size());}catch(...){p->live=false;break;}}});
  }catch(...){if(!running_)break;Sleep(20);}}
 }
@@ -248,6 +259,7 @@ void SharedVars::write(std::string key,Value value){
 }
 Value SharedVars::read(const std::string&key)const{std::lock_guard lock(mutex_);auto i=vars_.find(key);if(i==vars_.end())throw std::out_of_range("unknown shared variable");return i->second;}
 void SharedVars::erase(const std::string&key){
+ if(key.empty())throw std::invalid_argument("shared variable key cannot be empty");
  Bytes command=make_shared_delete(key);std::lock_guard lock(mutex_);auto old=vars_.find(key);std::optional<Value> previous;if(old!=vars_.end())previous=old->second;vars_.erase(key);
  try{client_->publish("__pipeipc.shared",command);}catch(...){if(previous)vars_[key]=std::move(*previous);throw;}
 }
