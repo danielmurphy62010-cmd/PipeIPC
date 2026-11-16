@@ -8,6 +8,8 @@ if not defined JAVA_HOME (
   set "JAVA_HOME=%JBIN%\.."
 )
 if not defined JBIN set "JBIN=%JAVA_HOME%\bin"
+set "PY_STATUS=not built"
+set "JAVA_STATUS=not built"
 
 if exist "%MSVC_DIR%\setup_x64.bat" call "%MSVC_DIR%\setup_x64.bat" || goto :err
 where cl >nul 2>&1 || (echo cl.exe not found.&goto :err)
@@ -37,28 +39,41 @@ cl /nologo /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I.. ..
 quickipc_tests.exe || goto :fail
 
 where python >nul 2>&1
-if errorlevel 1 goto :java
+if errorlevel 1 (set "PY_STATUS=skipped - Python not found"&goto :java)
 echo Building Python binding...
-python -c "import pybind11" >nul 2>&1 || python -m pip install --user pybind11==2.13.6 || goto :fail
+python -c "import pybind11" >nul 2>&1 || python -m pip install --user pybind11==3.1.0 || goto :fail
 for /f "delims=" %%I in ('python -c "import pybind11; print(pybind11.get_include())"') do set "PYBIND_INC=%%I"
 for /f "delims=" %%I in ('python -c "import sysconfig; print(sysconfig.get_path('include'))"') do set "PY_INC=%%I"
 for /f "delims=" %%I in ('python -c "import sysconfig,sys,os; print(sysconfig.get_config_var('LIBDIR') or os.path.join(sys.base_prefix,'libs'))"') do set "PY_LIB=%%I"
-for /f "delims=" %%I in ('python -c "import sysconfig,sys; print(sysconfig.get_config_var('LIBRARY') or ('python%d%d.lib' %% sys.version_info[:2]))"') do set "PY_LIBFILE=%%I"
-if not exist "%PY_INC%\Python.h" (echo Python development headers unavailable; skipping binding.&goto :java)
-if not exist "%PY_LIB%\%PY_LIBFILE%" (echo Python import library unavailable; skipping binding.&goto :java)
+for /f "delims=" %%I in ('python -c "import sys; print('.'.join(map(str,sys.version_info[:3])))"') do set "PY_VER=%%I"
+for /f "delims=" %%I in ('python -c "import sysconfig,sys; print(sysconfig.get_config_var('LIBRARY') or ('python%%d%%d.lib' %% sys.version_info[:2]))"') do set "PY_LIBFILE=%%I"
+if not exist "%PY_INC%\Python.h" (set "PY_STATUS=skipped - Python.h missing"&echo Python development headers unavailable; skipping binding.&goto :java)
+if not exist "%PY_LIB%\%PY_LIBFILE%" (
+  echo Python import library missing; fetching matching CPython %PY_VER% development package...
+  curl -fsSL "https://api.nuget.org/v3-flatcontainer/python/%PY_VER%/python.%PY_VER%.nupkg" -o python-dev.nupkg
+  if errorlevel 1 (set "PY_STATUS=skipped - CPython dev package unavailable"&echo Matching Python development package unavailable; skipping binding.&goto :java)
+  mkdir python-dev 2>nul
+  tar -xf python-dev.nupkg -C python-dev || goto :fail
+  set "PY_INC=%CD%\python-dev\tools\include"
+  set "PY_LIB=%CD%\python-dev\tools\libs"
+)
+if not exist "%PY_INC%\Python.h" (set "PY_STATUS=skipped - Python.h missing"&echo Python.h unavailable; skipping binding.&goto :java)
+if not exist "%PY_LIB%\%PY_LIBFILE%" (set "PY_STATUS=skipped - %PY_LIBFILE% unavailable"&echo %PY_LIBFILE% unavailable; skipping binding.&goto :java)
 cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I.. /Iblake3 /I"%PY_INC%" /I"%PYBIND_INC%" ..\module.cpp quickipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /link /LIBPATH:"%PY_LIB%" "%PY_LIBFILE%" /OUT:quickipc.pyd || goto :fail
 set "PYTHONPATH=%CD%"
 python -c "from quickipc import SharedVars; s=SharedVars('ci'); s.payload={'x':[1,2.5,True]}; assert s.payload['x'][0] == 1; del s.payload; assert 'payload' not in s" || goto :fail
+set "PY_STATUS=built"
 
 :java
-if not exist "%JBIN%\javac.exe" goto :copy
-if not exist "%JAVA_HOME%\include\jni.h" (echo JNI headers unavailable; skipping Java binding.&goto :copy)
+if not exist "%JBIN%\javac.exe" (set "JAVA_STATUS=skipped - JDK javac.exe missing"&echo JDK javac.exe missing; skipping Java binding.&goto :copy)
+if not exist "%JAVA_HOME%\include\jni.h" (set "JAVA_STATUS=skipped - JDK JNI headers missing"&echo JDK JNI headers unavailable; skipping Java binding.&goto :copy)
 echo Building Java binding...
 cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I.. /I"%JAVA_HOME%\include" /I"%JAVA_HOME%\include\win32" ..\jni.cpp quickipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /Fe:quickipc_jni.dll || goto :fail
 mkdir java 2>nul
 "%JBIN%\javac.exe" -d java ..\SharedVars.java ..\JavaExample.java || goto :fail
 "%JBIN%\java.exe" "-Djava.library.path=%CD%" -cp java JavaExample || goto :fail
 "%JBIN%\jar.exe" cf quickipc.jar -C java . || goto :fail
+set "JAVA_STATUS=built"
 
 :copy
 popd
@@ -67,7 +82,9 @@ if exist build\quickipc.pyd copy /y build\quickipc.pyd . >nul || goto :err
 if exist build\quickipc_jni.dll copy /y build\quickipc_jni.dll . >nul || goto :err
 if exist build\quickipc.jar copy /y build\quickipc.jar . >nul || goto :err
 rmdir /s /q build
-echo Build OK.
+echo Native C++ build: OK.
+echo Python binding: %PY_STATUS%.
+echo Java binding: %JAVA_STATUS%.
 exit /b 0
 
 :fail
