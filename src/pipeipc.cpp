@@ -301,7 +301,7 @@ void Client::receive_loop(){
 namespace pipeipc {
 SharedVars::SharedVars(Client&client,std::chrono::milliseconds timeout):client_(&client){
  if(!client.connected())throw std::runtime_error("client must be connected before creating SharedVars");
- client_->on_shared([this](const std::string&,const Bytes&b){receive(b);});
+ client_->on_shared([this](const Bytes&b){receive(b);});
  try{
   client_->send_shared(make_shared_snapshot_request());
   std::unique_lock lock(mutex_);
