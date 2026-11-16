@@ -85,7 +85,7 @@ Value from_java(JNIEnv*e,jobject o){
   jclass collection=e->FindClass("java/util/Collection");jmethodID to_array=e->GetMethodID(collection,"toArray","()[Ljava/lang/Object;");
   auto array=static_cast<jobjectArray>(e->CallObjectMethod(entries,to_array));jsize n=e->GetArrayLength(array);jclass entry_cls=e->FindClass("java/util/Map$Entry");
   jmethodID get_key=e->GetMethodID(entry_cls,"getKey","()Ljava/lang/Object;");jmethodID get_value=e->GetMethodID(entry_cls,"getValue","()Ljava/lang/Object;");
-  Dict values;for(jsize i=0;i<n;i++){jobject entry=e->GetObjectArrayElement(array,i);jobject key=e->CallObjectMethod(entry,get_key);jobject value=e->CallObjectMethod(entry,get_value);std::string k=from_string(e,static_cast<jstring>(key));values.values[k]=from_java(e,value);e->DeleteLocalRef(entry);e->DeleteLocalRef(key);e->DeleteLocalRef(value);}
+  Dict values;jclass string_type=e->FindClass("java/lang/String");for(jsize i=0;i<n;i++){jobject entry=e->GetObjectArrayElement(array,i);jobject key=e->CallObjectMethod(entry,get_key);jobject value=e->CallObjectMethod(entry,get_value);if(!key||!e->IsInstanceOf(key,string_type))throw std::invalid_argument("Java shared map keys must be strings");std::string k=from_string(e,static_cast<jstring>(key));values.values[k]=from_java(e,value);e->DeleteLocalRef(entry);e->DeleteLocalRef(key);if(value)e->DeleteLocalRef(value);}
   e->DeleteLocalRef(array);e->DeleteLocalRef(entries);return Value(std::move(values));
  }
  throw std::invalid_argument("unsupported Java shared value type");
