@@ -44,6 +44,10 @@ client.send("app.event", {"action": "handled by on"})
 state.counter = 2
 del state.config
 
+# Like dict.get(): returns None, or the supplied default, for missing keys.
+pending = state.get("not_ready_yet")
+fallback = state.get("not_ready_yet", 0)
+
 state.close()
 client.disconnect()
 server.stop()
