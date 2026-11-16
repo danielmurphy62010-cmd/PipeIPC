@@ -42,6 +42,14 @@ client.on("app.event", lambda label, value: print(value))
 client.send("app.event", {"action": "handled by on"})
 
 state.counter = 2
+
+# Normal nested mutations are monitored and broadcast automatically.
+state.config["enabled"] = False
+state.config["ports"].append(8002)
+state.config["tags"] = {"stable"}
+state.config["tags"].add("local")
+
+# Remove a shared variable by deleting its instance attribute.
 del state.config
 
 # Like dict.get(): returns None, or the supplied default, for missing keys.
@@ -110,7 +118,7 @@ vars.write("counter", pipeipc::Value(std::int64_t(1)));
 auto current = vars.read("counter");
 ```
 
-A `SharedVars` object requires an already-connected client, waits up to ten seconds for the initial snapshot, and must be destroyed before its C++ `Client`. Use one `SharedVars` object per client. Values written locally are updated optimistically; the broker then propagates the update to connected clients. Variable updates are asynchronous across clients. Concurrent writes are applied in the order processed by the broker, with the last processed write determining the final value.
+The Python `SharedVars` object requires an already-connected client and waits up to ten seconds for the initial snapshot. Its variables are real instance attributes stored in `state.__dict__`. A background updater checks that dictionary and propagates new, changed, and removed attributes. It also compares nested built-in containers, so in-place operations such as `state.config["enabled"] = False`, `state.items.append(value)`, `state.tags.add(value)`, and `state.mapping.pop(key)` are synchronized without reassigning the top-level variable. Use `del state.name` to remove a variable. Synchronization is asynchronous (10 ms default polling interval); `state.sync_error` exposes a synchronization error if a value cannot be encoded. Use one `SharedVars` object per client and close it before disconnecting the client. Concurrent writes are applied in the order processed by the broker, with the last processed write determining the final value.
 
 ## Behavior and limits
 
