@@ -15,9 +15,9 @@ The build script downloads the pinned BLAKE3 C implementation and pybind11. Pyth
 
 ## Python
 
-Start one broker for a namespace, then connect each participating process using the same namespace:
+The message API is deliberately small: \`send\`, \`recv\`, and \`on\`.
 
-```python
+\`\`\`python
 from pipeipc import Server, Client, SharedVars
 
 server = Server("my-app")
@@ -26,36 +26,31 @@ server.start()
 client = Client("my-app")
 client.connect()
 
-state = SharedVars(client)  # waits for the current broker snapshot
+state = SharedVars(client)
 state.counter = 1
 state.config = {"enabled": True, "ports": [8000, 8001]}
 
-print(state.counter)
-print(state.snapshot())
-
-def handle_message(label, payload):
-    print(label, payload)
-
-client.on("app.log", handle_message)           # raw bytes
-client.publish("app.log", b"worker started")
-
-client.on_value("app.command", lambda label, value: print(value))
 client.send("app.command", {"action": "reload", "force": True})
 
-# Any connected client can update or delete the same keys.
+# Receive the next message. Returns (label, value), or None on timeout.
+label, value = client.recv(5000)
+
+# Or handle a label with a callback.
+client.on("app.command", lambda label, value: print(value))
+
 state.counter = 2
 del state.config
 
 state.close()
 client.disconnect()
 server.stop()
-```
+\`\`\`
 
-`Client.publish()` and `Server.publish()` send raw bytes. `Client.send()` and `Server.send()` encode a PipeIPC value; receive those messages with `Client.on_value()`. Supported Python values are `None`, booleans, signed 64-bit integers, floats, strings, bytes, lists, tuples, sets/frozensets, and dictionaries with string keys.
+\`send(label, value)\` accepts \`None\`, booleans, signed 64-bit integers, floats, strings, bytes, lists, tuples, sets/frozensets, and dictionaries with string keys. \`recv(timeout_ms=-1)\` blocks until a message arrives or the client disconnects; a nonnegative timeout returns \`None\` when it expires. \`on(label, callback)\` invokes the callback with \`(label, value)\` when that label arrives. Both \`recv\` and \`on\` can be used together.
 
 ## Java
 
-```java
+\`\`\`java
 import pipeipc.*;
 
 Server server = new Server("my-app");
@@ -63,24 +58,26 @@ server.start();
 
 try (Client client = new Client("my-app")) {
     client.connect();
+
     try (SharedVars state = new SharedVars(client)) {
         state.set("counter", 1L);
         state.set("config", java.util.Map.of("enabled", true));
-        System.out.println(state.get("counter"));
 
-        client.on("app.log", (label, payload) ->
-            System.out.println(label + ": " + new String(payload)));
-        client.publish("app.log", "worker started".getBytes());
+        client.send("app.command", java.util.Map.of("action", "reload"));
+        Message message = client.recv(5000);
+        if (message != null) System.out.println(message.label() + ": " + message.value());
+
+        client.on("app.command", (label, value) -> System.out.println(value));
     }
 }
 server.close();
-```
+\`\`\`
 
-Java message payloads are byte arrays. Java shared values support null, booleans, integral and floating-point numbers, strings, byte arrays, lists, sets, and maps with string keys. Java clients use `MessageListener.onMessage(String, byte[])` for incoming messages.
+Java message values support null, booleans, integral and floating-point numbers, strings, byte arrays, lists, sets, and maps with string keys. \`Message\` is the value returned by \`Client.recv()\`; \`MessageListener\` is used by \`Client.on()\`.
 
 ## Native C++
 
-```cpp
+\`\`\`cpp
 #include "pipeipc.hpp"
 
 pipeipc::Server server;
@@ -89,24 +86,28 @@ server.start();
 pipeipc::Client client;
 client.connect();
 
-client.on("app.log", [](const std::string& label, const pipeipc::Bytes& bytes) {
-    // Handle a message.
+client.send("app.command", pipeipc::Value(std::string("reload")));
+auto message = client.recv(std::chrono::seconds(5));
+if (message) {
+    // message->label and message->value
+}
+
+client.on("app.command", [](const std::string& label, const pipeipc::Value& value) {
+    // Handle a matching message.
 });
-client.publish("app.log", pipeipc::Bytes{'o', 'k'});
 
 pipeipc::SharedVars vars(client);
 vars.write("counter", pipeipc::Value(std::int64_t(1)));
-vars.write("config", pipeipc::Value(std::string("ready")));
 auto current = vars.read("counter");
-```
+\`\`\`
 
-A `SharedVars` object requires an already-connected client and waits up to ten seconds for the initial snapshot. Use one `SharedVars` object per client. In native C++, destroy `SharedVars` before its `Client`. Values written locally are updated optimistically; the broker then publishes the committed update to connected clients. Variable updates are asynchronous across clients. Concurrent writes are applied in the order processed by the broker, with the last processed write determining the final value.
+A \`SharedVars\` object requires an already-connected client, waits up to ten seconds for the initial snapshot, and must be destroyed before its C++ \`Client\`. Use one \`SharedVars\` object per client. Values written locally are updated optimistically; the broker then propagates the update to connected clients. Variable updates are asynchronous across clients. Concurrent writes are applied in the order processed by the broker, with the last processed write determining the final value.
 
 ## Behavior and limits
 
 - The broker namespace is the `Server`/`Client` name. Processes using different names do not communicate.
 - The broker must be running before clients connect.
-- Messages are broadcast to all connected clients, including the sender. A client receives a label only after registering it with `on` or `on_value`. Callbacks run on the receive thread and should hand long-running work to an application worker thread.
+- Messages are broadcast to all connected clients, including the sender. `recv()` receives the next queued message; `on(label, callback)` invokes a callback for matching labels. Callbacks run on the receive thread and should hand long-running work to an application worker thread.
 - Shared variables are volatile: stopping the broker clears the store. They are not persisted to disk.
 - A raw message or encoded value is limited to 16 MiB. The server's per-client outbound queue defaults to 256 MiB.
 - A client that exceeds the server's outbound queue limit is disconnected.
