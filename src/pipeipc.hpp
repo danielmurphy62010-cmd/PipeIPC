@@ -109,13 +109,13 @@ public:
  void send(const std::string& label,const Value& value);
 private:
  struct Peer;
- void accept_loop();
+ void accept_loop(); void reap_loop();
  void enqueue(const std::shared_ptr<Peer>&,Bytes);
  void remove_peer(const std::shared_ptr<Peer>&);
  void broadcast(const Bytes&);
  void handle_shared_command(const std::shared_ptr<Peer>&,const Bytes&);
  Options options_; ProtocolSecrets secrets_; std::atomic_bool running_{false};
- std::thread accept_thread_; std::mutex peers_mutex_; std::unordered_map<std::string,std::shared_ptr<Peer>> peers_;
+ std::thread accept_thread_,reap_thread_; std::mutex peers_mutex_; std::unordered_map<std::string,std::shared_ptr<Peer>> peers_;
  std::atomic_uint64_t next_mid_{1};
  std::mutex shared_mutex_; std::map<std::string,Value> shared_values_; std::uint64_t shared_revision_=0;
 };
