@@ -1,39 +1,39 @@
 package pipeipc;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
-public abstract class SharedVars implements AutoCloseable {
+/**
+ * Process-shared variables backed by the connected PipeIPC server.
+ * Values support null, Boolean, integral/floating numbers, String, byte[],
+ * List, Set, and Map<String, ?>. Any connected client may change any key.
+ */
+public final class SharedVars implements AutoCloseable {
     static { System.loadLibrary("pipeipc_jni"); }
+    private final Client client;
     private long handle;
 
-    protected SharedVars(String label) { this(label, "java", true); }
-
-    protected SharedVars(String label, String processId, boolean creator) {
-        handle = nativeCreate(label, processId, creator);
-        if (handle == 0) throw new IllegalStateException("Could not create SharedVars");
+    public SharedVars(Client client) {
+        if (client == null) throw new NullPointerException("client");
+        this.client = client;
+        handle = nativeCreate(client.nativeHandle());
+        if (handle == 0) throw new IllegalStateException("Could not create shared variables");
     }
+    public synchronized void set(String key, Object value) { ensureOpen(); nativeWrite(handle, key, value); }
+    public synchronized Object get(String key) { ensureOpen(); return nativeRead(handle, key); }
+    public synchronized void delete(String key) { ensureOpen(); nativeDelete(handle, key); }
+    public synchronized boolean contains(String key) { ensureOpen(); return nativeContains(handle, key); }
+    @SuppressWarnings("unchecked")
+    public synchronized Map<String,Object> snapshot() { ensureOpen(); return (Map<String,Object>) nativeSnapshot(handle); }
 
-    public final synchronized Map<String,Object> snapshot() {
-        if (handle == 0) throw new IllegalStateException("SharedVars is closed");
-        Map<String,Object> values = new LinkedHashMap<>();
-        for (Class<?> c = getClass(); c != null && c != SharedVars.class; c = c.getSuperclass()) {
-            for (Field f : c.getDeclaredFields()) {
-                int m = f.getModifiers();
-                if (Modifier.isStatic(m) || Modifier.isFinal(m) || Modifier.isTransient(m) || f.isSynthetic() || f.getName().startsWith("_")) continue;
-                try { f.setAccessible(true); values.putIfAbsent(f.getName(), f.get(this)); }
-                catch (ReflectiveOperationException | RuntimeException e) { throw new IllegalStateException("Cannot read shared field: " + f.getName(), e); }
-            }
-        }
-        return values;
-    }
-
-    @Override public final synchronized void close() {
+    private void ensureOpen() { if (handle == 0) throw new IllegalStateException("SharedVars is closed"); }
+    @Override public synchronized void close() {
         if (handle != 0) { nativeClose(handle); handle = 0; }
     }
-
-    private static native long nativeCreate(String label, String processId, boolean creator);
+    private static native long nativeCreate(long clientHandle);
+    private static native void nativeWrite(long handle, String key, Object value);
+    private static native Object nativeRead(long handle, String key);
+    private static native void nativeDelete(long handle, String key);
+    private static native boolean nativeContains(long handle, String key);
+    private static native Object nativeSnapshot(long handle);
     private static native void nativeClose(long handle);
 }
