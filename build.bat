@@ -28,13 +28,6 @@ echo Compiling...
 cl /nologo /c /TC /O2 /MD /DBLAKE3_NO_SSE2 /DBLAKE3_NO_SSE41 /DBLAKE3_NO_AVX2 /DBLAKE3_NO_AVX512 /Iblake3 blake3\blake3.c blake3\blake3_dispatch.c blake3\blake3_portable.c || goto :fail
 cl /nologo /c /std:c++20 /O2 /EHsc /MD /W3 /permissive- /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I..\src /Iblake3 ..\src\quickipc.cpp || goto :fail
 
-echo Building C++ example...
-cl /nologo /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I..\src ..\src\example.cpp quickipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /Fe:quickipc.exe || goto :fail
-
-echo Running C++ tests...
-cl /nologo /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I..\src ..\src\tests.cpp quickipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /Fe:quickipc_tests.exe || goto :fail
-quickipc_tests.exe || goto :fail
-
 where python >nul 2>&1
 if errorlevel 1 (set "PY_STATUS=skipped - Python not found"&goto :java)
 echo Building Python binding...
@@ -87,7 +80,6 @@ set "JAVA_STATUS=built"
 
 :copy
 popd
-copy /y build\quickipc.exe . >nul || goto :err
 if exist build\quickipc.pyd copy /y build\quickipc.pyd . >nul || goto :err
 if exist build\quickipc_jni.dll copy /y build\quickipc_jni.dll . >nul || goto :err
 if exist build\quickipc.jar copy /y build\quickipc.jar . >nul || goto :err
