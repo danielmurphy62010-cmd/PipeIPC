@@ -5,6 +5,7 @@
 #include <Windows.h>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -67,48 +68,55 @@ Frame decode_frame(const ProtocolSecrets&,std::span<const std::uint8_t>);
 Bytes encode_ack(const ProtocolSecrets&,const FrameHeader&,char);
 
 using Listener=std::function<void(const std::string&,const Bytes&)>;
-using ReplyHandler=std::function<Bytes(const Bytes&)>;
 class ListenerRegistry {
 public:
  void add(std::string,Listener); void remove(const std::string&);
  void dispatch(const std::string&,const Bytes&)const;
- bool claim_reply(std::string,std::string,ReplyHandler);
- void release_reply(const std::string&,const std::string&);
- Bytes request(const std::string&,const Bytes&)const;
 private:
- mutable std::mutex mutex_; std::map<std::string,Listener> listeners_;
- struct Owner { std::string process; ReplyHandler callback; };
- std::map<std::string,Owner> replies_;
+ mutable std::mutex mutex_; std::map<std::string,std::shared_ptr<Listener>> listeners_;
 };
 
+struct Options { std::wstring name=L"default"; std::size_t max_queue_bytes=256u*1024u*1024u; };
+class Client;
 class SharedVars {
 public:
- SharedVars(std::string label,std::string process_id,bool creator);
- const std::string& label()const noexcept{return label_;}
- bool creator()const noexcept{return creator_;}
+ explicit SharedVars(Client&,std::chrono::milliseconds timeout=std::chrono::seconds(10));
+ ~SharedVars();
+ SharedVars(const SharedVars&)=delete; SharedVars& operator=(const SharedVars&)=delete;
  void write(std::string,Value);
  Value read(const std::string&)const;
  void erase(const std::string&);
  bool contains(const std::string&)const;
  std::map<std::string,Value> snapshot()const;
- void install_snapshot(std::map<std::string,Value>);
- std::map<std::string,Value> handle_snapshot_request()const;
+ bool ready()const;
+ std::uint64_t revision()const;
 private:
- std::string label_,process_; bool creator_;
- mutable std::mutex mutex_; std::map<std::string,Value> vars_;
+ void receive(const Bytes&);
+ Client* client_;
+ mutable std::mutex mutex_;
+ std::condition_variable cv_;
+ std::map<std::string,Value> vars_;
+ std::uint64_t revision_=0;
+ bool ready_=false;
 };
 
-struct Options { std::wstring name=L"default"; std::size_t max_queue_bytes=256u*1024u*1024u; };
 class Server {
 public:
  explicit Server(Options={}); ~Server();
  Server(const Server&)=delete; Server& operator=(const Server&)=delete;
  void start(); void stop(); bool running()const noexcept;
  void publish(const std::string& label,const Bytes& payload);
-private: struct Peer; void accept_loop();
+ void send(const std::string& label,const Value& value);
+private:
+ struct Peer;
+ void accept_loop();
+ void enqueue(const std::shared_ptr<Peer>&,Bytes);
+ void broadcast(const Bytes&);
+ void handle_shared_command(const std::shared_ptr<Peer>&,const Bytes&);
  Options options_; ProtocolSecrets secrets_; std::atomic_bool running_{false};
  std::thread accept_thread_; std::mutex peers_mutex_; std::unordered_map<std::string,std::shared_ptr<Peer>> peers_;
  std::atomic_uint64_t next_mid_{1};
+ std::mutex shared_mutex_; std::map<std::string,Value> shared_values_; std::uint64_t shared_revision_=0;
 };
 class Client {
 public:
@@ -117,9 +125,7 @@ public:
  void connect(); void disconnect(); bool connected()const noexcept;
  void on(std::string label,Listener cb); void off(const std::string&);
  void publish(const std::string&,const Bytes&);
- void request(const std::string&,const Bytes&,std::function<void(Bytes)> callback);
- bool claim_reply(const std::string&,ReplyHandler);
- void release_reply(const std::string&);
+ void send(const std::string&,const Value&);
  ListenerRegistry& listeners()noexcept{return listeners_;}
  const std::string& id()const noexcept{return id_;}
 private:
@@ -127,9 +133,8 @@ private:
  Options options_; std::string id_; ProtocolSecrets secrets_{};
  std::atomic_bool connected_{false}; std::thread rx_thread_,ack_thread_;
  std::unique_ptr<Handle> tx_,rx_,txack_,rxack_;
- ListenerRegistry listeners_; std::mutex send_mutex_; std::mutex pending_mutex_; std::mutex label_mutex_;
+ ListenerRegistry listeners_; std::mutex send_mutex_; std::mutex label_mutex_;
  std::map<std::array<std::uint8_t,8>,std::string> labels_;
- std::unordered_map<std::uint64_t,std::function<void(Bytes)>> pending_;
  std::atomic_uint64_t next_mid_{1};
 };
 }
