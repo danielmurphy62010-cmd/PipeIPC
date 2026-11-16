@@ -35,8 +35,9 @@ def main():
             received = threading.Event()
             handled = []
 
-            second.on("example.message", lambda label, value: (handled.append((label, value)), received.set()))
-            first.send("example.message", {"text": "hello", "count": 3})
+            second.on("example.event", lambda label, value: (handled.append((label, value)), received.set()))
+            first.send("example.event", {"text": "handled by on"})
+            first.send("example.recv", {"text": "received by recv"})
 
             message = second.recv(5000)
             if message is None:
