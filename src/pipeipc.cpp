@@ -98,10 +98,11 @@ struct Server::Peer {
 Server::Server(Options o):options_(std::move(o)),secrets_(random_secrets()){}
 Server::~Server(){stop();}
 bool Server::running()const noexcept{return running_;}
-void Server::start(){bool expected=false;if(!running_.compare_exchange_strong(expected,true))return;accept_thread_=std::thread(&Server::accept_loop,this);}
+void Server::start(){bool expected=false;if(!running_.compare_exchange_strong(expected,true))return;reap_thread_=std::thread(&Server::reap_loop,this);accept_thread_=std::thread(&Server::accept_loop,this);}
 void Server::stop(){
  if(!running_.exchange(false))return;
  if(accept_thread_.joinable()){CancelSynchronousIo(accept_thread_.native_handle());accept_thread_.join();}
+ if(reap_thread_.joinable())reap_thread_.join();
  std::vector<std::shared_ptr<Peer>> peers;
  {std::lock_guard g(peers_mutex_);for(auto&[id,p]:peers_){p->live=false;p->cv.notify_all();peers.push_back(p);}peers_.clear();}
  for(auto&p:peers){if(p->tx.valid())CancelIoEx(p->tx.get(),nullptr);if(p->rx.valid())CancelIoEx(p->rx.get(),nullptr);if(p->txack.valid())CancelIoEx(p->txack.get(),nullptr);if(p->rxack.valid())CancelIoEx(p->rxack.get(),nullptr);}
@@ -121,7 +122,18 @@ void Server::enqueue(const std::shared_ptr<Peer>&p,Bytes b){
 void Server::remove_peer(const std::shared_ptr<Peer>&p){
  p->live=false;p->cv.notify_all();
  for(auto*h:{&p->tx,&p->rx,&p->txack,&p->rxack})if(h->valid())CancelIoEx(h->get(),nullptr);
- std::lock_guard g(peers_mutex_);auto i=peers_.find(p->id);if(i!=peers_.end()&&i->second==p)peers_.erase(i);
+}
+void Server::reap_loop(){
+ while(running_){
+  std::vector<std::shared_ptr<Peer>> dead;
+  {std::lock_guard g(peers_mutex_);for(auto i=peers_.begin();i!=peers_.end();){if(!i->second->live){dead.push_back(i->second);i=peers_.erase(i);}else ++i;}}
+  for(auto&p:dead){
+   if(p->reader.joinable())p->reader.join();
+   if(p->writer.joinable())p->writer.join();
+   if(p->ackreader.joinable())p->ackreader.join();
+  }
+  Sleep(25);
+ }
 }
 void Server::broadcast(const Bytes&b){
  std::lock_guard g(peers_mutex_);
@@ -174,17 +186,17 @@ void Server::accept_loop(){
   write_exact(control.get(),secrets_.magic1.data(),8);write_exact(control.get(),secrets_.magic2.data(),8);
   auto attach=[](Handle&h){BOOL x=ConnectNamedPipe(h.get(),nullptr);if(!x&&GetLastError()!=ERROR_PIPE_CONNECTED)throw std::runtime_error("peer pipe connect failed");};
   attach(p->tx);attach(p->rx);attach(p->txack);attach(p->rxack);
-  {std::lock_guard g(peers_mutex_);peers_[id]=p;}
-  p->writer=std::thread([this,p]{while(p->live){Bytes b;{std::unique_lock l(p->out_mutex);p->cv.wait(l,[&]{return !p->live||!p->out.empty();});if(!p->live)break;b=std::move(p->out.front());p->out.pop_front();p->queued_bytes-=b.size();}try{write_wire(p->rx.get(),b);}catch(...){p->live=false;break;}}});
+  p->writer=std::thread([this,p]{while(p->live){Bytes b;{std::unique_lock l(p->out_mutex);p->cv.wait(l,[&]{return !p->live||!p->out.empty();});if(!p->live)break;b=std::move(p->out.front());p->out.pop_front();p->queued_bytes-=b.size();}try{write_wire(p->rx.get(),b);}catch(...){remove_peer(p);break;}}remove_peer(p);});
   p->reader=std::thread([this,p]{while(p->live){try{
    auto b=read_frame(p->tx.get(),p->secrets);auto f=decode_frame(p->secrets,b);
    write_wire(p->rxack.get(),encode_ack(p->secrets,f.header,'1'));write_wire(p->rxack.get(),encode_ack(p->secrets,f.header,'2'));
    if(f.header.listener_id==shared_channel()){try{handle_shared_command(p,f.payload);}catch(...){}}
    else broadcast(b);
-  }catch(...){p->live=false;p->cv.notify_all();break;}}
+  }catch(...){remove_peer(p);break;}}
   remove_peer(p);
  });
-  p->ackreader=std::thread([p]{while(p->live){try{std::array<std::uint8_t,101>a{};read_exact(p->txack.get(),a.data(),a.size());}catch(...){p->live=false;break;}}});
+  p->ackreader=std::thread([this,p]{while(p->live){try{std::array<std::uint8_t,101>a{};read_exact(p->txack.get(),a.data(),a.size());}catch(...){remove_peer(p);break;}}remove_peer(p);});
+  {std::lock_guard g(peers_mutex_);peers_[id]=p;}
  }catch(...){if(!running_)break;Sleep(20);}}
 }
 Client::Client(Options o):options_(std::move(o)),id_(make_id()){}
@@ -192,6 +204,7 @@ Client::~Client(){disconnect();}
 bool Client::connected()const noexcept{return connected_;}
 void Client::connect(){
  if(connected_)return;
+ id_=make_id();
  auto c=open_pipe(ctl(options_),GENERIC_READ|GENERIC_WRITE);
  std::array<std::uint8_t,64> hello{};std::copy(id_.begin(),id_.end(),hello.begin());write_exact(c.get(),hello.data(),hello.size());
  read_exact(c.get(),secrets_.magic1.data(),8);read_exact(c.get(),secrets_.magic2.data(),8);
