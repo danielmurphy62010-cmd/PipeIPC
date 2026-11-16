@@ -299,6 +299,18 @@ void Client::receive_loop(){
   write_wire(txack_->get(),encode_ack(secrets_,frame.header,'2'));
  }catch(...){if(connected_)connected_=false;inbox_cv_.notify_all();break;}}
 }
+void Client::ack_loop(){
+ while(connected_){
+  try{
+   std::array<std::uint8_t,101> ack{};
+   read_exact(rxack_->get(),ack.data(),ack.size());
+  }catch(...){
+   if(connected_)connected_=false;
+   inbox_cv_.notify_all();
+   break;
+  }
+ }
+}
 }
 
 
