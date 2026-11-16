@@ -9,7 +9,7 @@ The native transport is C++20. Python bindings use pybind11, and Java bindings u
 
 ## Build
 
-Run \`build.bat\` from a Visual Studio x64 developer environment. The script builds the native library and attempts the Python and Java bindings when their development headers and runtimes are available.
+Run `build.bat` from a Visual Studio x64 developer environment. The script builds the native library and attempts the Python and Java bindings when their development headers and runtimes are available.
 
 The build script downloads the pinned BLAKE3 C implementation and pybind11. Python and Java binding builds may be skipped if the matching development files are unavailable. The Python and Java examples are also used as smoke tests when their bindings are built.
 
@@ -17,7 +17,7 @@ The build script downloads the pinned BLAKE3 C implementation and pybind11. Pyth
 
 Start one broker for a namespace, then connect each participating process using the same namespace:
 
-\`\`\`python
+```python
 from pipeipc import Server, Client, SharedVars
 
 server = Server("my-app")
@@ -49,13 +49,13 @@ del state.config
 state.close()
 client.disconnect()
 server.stop()
-\`\`\`
+```
 
-\`Client.publish()\` and \`Server.publish()\` send raw bytes. \`Client.send()\` and \`Server.send()\` encode a PipeIPC value; receive those messages with \`Client.on_value()\`. Supported Python values are \`None\`, booleans, signed 64-bit integers, floats, strings, bytes, lists, tuples, sets/frozensets, and dictionaries with string keys.
+`Client.publish()` and `Server.publish()` send raw bytes. `Client.send()` and `Server.send()` encode a PipeIPC value; receive those messages with `Client.on_value()`. Supported Python values are `None`, booleans, signed 64-bit integers, floats, strings, bytes, lists, tuples, sets/frozensets, and dictionaries with string keys.
 
 ## Java
 
-\`\`\`java
+```java
 import pipeipc.*;
 
 Server server = new Server("my-app");
@@ -74,13 +74,13 @@ try (Client client = new Client("my-app")) {
     }
 }
 server.close();
-\`\`\`
+```
 
-Java message payloads are byte arrays. Java shared values support null, booleans, integral and floating-point numbers, strings, byte arrays, lists, sets, and maps with string keys. Java clients use \`MessageListener.onMessage(String, byte[])\` for incoming messages.
+Java message payloads are byte arrays. Java shared values support null, booleans, integral and floating-point numbers, strings, byte arrays, lists, sets, and maps with string keys. Java clients use `MessageListener.onMessage(String, byte[])` for incoming messages.
 
 ## Native C++
 
-\`\`\`cpp
+```cpp
 #include "pipeipc.hpp"
 
 pipeipc::Server server;
@@ -98,17 +98,17 @@ pipeipc::SharedVars vars(client);
 vars.write("counter", pipeipc::Value(std::int64_t(1)));
 vars.write("config", pipeipc::Value(std::string("ready")));
 auto current = vars.read("counter");
-\`\`\`
+```
 
-A \`SharedVars\` object requires an already-connected client and waits up to ten seconds for the initial snapshot. Values written locally are updated optimistically; the broker then publishes the committed update to connected clients. Variable updates are asynchronous across clients. Concurrent writes are applied in the order processed by the broker, with the last processed write determining the final value.
+A `SharedVars` object requires an already-connected client and waits up to ten seconds for the initial snapshot. Values written locally are updated optimistically; the broker then publishes the committed update to connected clients. Variable updates are asynchronous across clients. Concurrent writes are applied in the order processed by the broker, with the last processed write determining the final value.
 
 ## Behavior and limits
 
-- The broker namespace is the \`Server\`/\`Client\` name. Processes using different names do not communicate.
+- The broker namespace is the `Server`/`Client` name. Processes using different names do not communicate.
 - The broker must be running before clients connect.
-- Messages are broadcast to all connected clients, including the sender. A client receives a label only after registering it with \`on\` or \`on_value\`.
+- Messages are broadcast to all connected clients, including the sender. A client receives a label only after registering it with `on` or `on_value`.
 - Shared variables are volatile: stopping the broker clears the store. They are not persisted to disk.
 - A raw message or encoded value is limited to 16 MiB. The server's per-client outbound queue defaults to 256 MiB.
 - A client that exceeds the server's outbound queue limit is disconnected.
 - PipeIPC uses local Windows named pipes and rejects remote named-pipe clients. The server does not implement per-message authentication or authorization; use it only among mutually trusted local processes.
-- The internal \`__pipeipc.shared\` message label is reserved for synchronization and must not be used by applications.
+- The internal `__pipeipc.shared` message label is reserved for synchronization and must not be used by applications.
