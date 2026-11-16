@@ -140,6 +140,7 @@ private:
  std::unique_ptr<Handle> tx_,rx_,txack_,rxack_;
  ListenerRegistry listeners_; std::mutex send_mutex_; std::mutex label_mutex_;
  std::map<std::array<std::uint8_t,8>,std::string> labels_;
+ std::atomic_bool shared_subscribed_{false};
  std::atomic_uint64_t next_mid_{1};
 };
 }
