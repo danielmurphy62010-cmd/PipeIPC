@@ -25,10 +25,10 @@ if not exist "%B3%\c\blake3.c" (
 )
 
 echo Building BLAKE3...
-cl /nologo /c /TC /O2 /MD /DBLAKE3_NO_SSE2 /DBLAKE3_NO_SSE41 /DBLAKE3_NO_AVX2 /DBLAKE3_NO_AVX512 /I"%B3%\c" "%B3%\c\blake3.c" "%B3%\c\blake3_dispatch.c" "%B3%\c\blake3_portable.c" /Fo"%BUILD%\" || goto :err
+cl /nologo /c /TC /O2 /MD /DBLAKE3_NO_SSE2 /DBLAKE3_NO_SSE41 /DBLAKE3_NO_AVX2 /DBLAKE3_NO_AVX512 /I"%B3%\c" "%B3%\c\blake3.c" "%B3%\c\blake3_dispatch.c" "%B3%\c\blake3_portable.c" /Fo%BUILD%\\ || goto :err
 
 echo Building QuickIPC core...
-cl /nologo /c /std:c++20 /O2 /EHsc /MD /W3 /permissive- /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I. pipe.cpp protocol.cpp routing.cpp runtime.cpp shared_vars.cpp value.cpp /Fo"%BUILD%\" || goto :err
+cl /nologo /c /std:c++20 /O2 /EHsc /MD /W3 /permissive- /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I. pipe.cpp protocol.cpp routing.cpp runtime.cpp shared_vars.cpp value.cpp /Fo%BUILD%\\ || goto :err
 
 lib /nologo /OUT:"%BUILD%\quickipc_core.lib" "%BUILD%\pipe.obj" "%BUILD%\protocol.obj" "%BUILD%\routing.obj" "%BUILD%\runtime.obj" "%BUILD%\shared_vars.obj" "%BUILD%\value.obj" "%BUILD%\blake3.obj" "%BUILD%\blake3_dispatch.obj" "%BUILD%\blake3_portable.obj" || goto :err
 
@@ -48,7 +48,7 @@ if not errorlevel 1 (
   for /f "delims=" %%I in ('python -c "import sys; print('python%%d%%d.lib' %% sys.version_info[:2])"') do set "PY_LIBFILE=%%I"
   if not exist "%PY_INC%\Python.h" (echo Python.h not found; skipping Python binding.&goto :java)
   if not exist "%PY_LIB%\%PY_LIBFILE%" (echo %PY_LIBFILE% not found; skipping Python binding.&goto :java)
-  cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I. /I"%B3%\c" /I"%PY_INC%" /I"%PYBIND_INC%" module.cpp "%BUILD%\quickipc_core.lib" bcrypt.lib ole32.lib /link /LIBPATH:"%PY_LIB%" "%PY_LIBFILE%" /Fo%BUILD%\\ /OUT:"%BUILD%\quickipc.pyd" || goto :err
+  cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I. /I"%B3%\c" /I"%PY_INC%" /I"%PYBIND_INC%" module.cpp "%BUILD%\quickipc_core.lib" bcrypt.lib ole32.lib /Fo%BUILD%\\ /link /LIBPATH:"%PY_LIB%" "%PY_LIBFILE%" /OUT:"%BUILD%\quickipc.pyd" || goto :err
   set "PYTHONPATH=%CD%\%BUILD%"
   python -c "from quickipc import SharedVars; s=SharedVars('ci'); s.payload={'x':[1,2.5,True]}; assert s.payload['x'][0] == 1; del s.payload; assert 'payload' not in s" || goto :err
 ) else (
