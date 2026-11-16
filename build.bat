@@ -3,8 +3,10 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 if not defined MSVC_DIR set "MSVC_DIR=%OneDrive%\APPS\MSVC"
-set "JBIN=C:\Program Files\Eclipse IDE\v.25.12\eclipse\plugins\org.eclipse.justj.openjdk.hotspot.jre.full.win32.x86_64_21.0.9.v20251105-0741\jre\bin"
-set "JAVA_HOME=%JBIN%\.."
+if not defined JAVA_HOME for /f "delims=" %%I in ('where javac 2^>nul') do if not defined JAVA_HOME set "JAVA_HOME=%%~dpI.."
+if not defined JAVA_HOME set "JBIN=C:\Program Files\Eclipse IDE\v.25.12\eclipse\plugins\org.eclipse.justj.openjdk.hotspot.jre.full.win32.x86_64_21.0.9.v20251105-0741\jre\bin"
+if not defined JAVA_HOME set "JAVA_HOME=%JBIN%\.."
+set "JBIN=%JAVA_HOME%\bin"
 set "PY_STATUS=not built"
 set "JAVA_STATUS=not built"
 
