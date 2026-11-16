@@ -122,7 +122,7 @@ void set_message_listener(JNIEnv*e,Client&client,const std::string&label,jobject
 }
 
 extern "C" JNIEXPORT jlong JNICALL Java_pipeipc_Server_nativeCreate(JNIEnv*e,jclass,jstring name){
- try{return reinterpret_cast<jlong>(new ServerPtr(std::make_shared<JavaServerHandle>(std::wstring(from_string(e,name).begin(),from_string(e,name).end()))));}
+ try{auto n=from_string(e,name);return reinterpret_cast<jlong>(new ServerPtr(std::make_shared<JavaServerHandle>(std::wstring(n.begin(),n.end()))));}
  catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());return 0;}
 }
 extern "C" JNIEXPORT void JNICALL Java_pipeipc_Server_nativeStart(JNIEnv*e,jclass,jlong h){try{server_ref(h).server.start();}catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());}}
