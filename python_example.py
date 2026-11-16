@@ -47,8 +47,8 @@ def main():
             print("Shared variables:", first_vars.snapshot())
         finally:
             first_vars.delete("status")
-            first_vars  # keep the object alive through deletion
-            second_vars
+            first_vars.close()
+            second_vars.close()
             first.disconnect()
             second.disconnect()
     finally:
