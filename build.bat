@@ -47,11 +47,14 @@ for /f "delims=" %%I in ('python -c "import sysconfig; print(sysconfig.get_path(
 for /f "delims=" %%I in ('python -c "import sysconfig,sys,os; print(sysconfig.get_config_var('LIBDIR') or os.path.join(sys.base_prefix,'libs'))"') do set "PY_LIB=%%I"
 for /f "delims=" %%I in ('python -c "import sys; print('.'.join(map(str,sys.version_info[:3])))"') do set "PY_VER=%%I"
 for /f "delims=" %%I in ('python -c "import sys; print('python' + str(sys.version_info[0]) + str(sys.version_info[1]) + '.lib')"') do set "PY_LIBFILE=%%I"
-for /f "delims=" %%I in ('python -c "import os,sys; print(os.path.abspath(os.path.join(os.path.dirname(sys.executable), '..', 'python' + str(sys.version_info[0]) + str(sys.version_info[1]) + '.dll')))"') do set "PY_DLL=%%I"
+for /f "delims=" %%I in ('python -c "import sys; print('python' + str(sys.version_info[0]) + str(sys.version_info[1]) + '.dll')"') do set "PY_DLLFILE=%%I"
+set "PY_DLL="
+for /f "delims=" %%I in ('where python') do if exist "%%~dpI..\%PY_DLLFILE%" set "PY_DLL=%%~dpI..\%PY_DLLFILE%"
+if not defined PY_DLL for /f "delims=" %%I in ('python -c "import os,sys; p=os.path.join(sys.base_prefix, 'python' + str(sys.version_info[0]) + str(sys.version_info[1]) + '.dll'); print(os.path.abspath(p) if os.path.isfile(p) else '')"') do set "PY_DLL=%%I"
 
-if not exist "%PY_DLL%" (
+if not defined PY_DLL (
   set "PY_STATUS=skipped - Python runtime DLL missing"
-  echo Python runtime DLL not found at "%PY_DLL%"; expected next to the Python installation root.
+  echo Could not find %PY_DLLFILE% in the parent directory of any "where python" result or in sys.base_prefix.
   goto :java
 )
 for %%I in ("%PY_DLL%") do set "PY_DLL_DIR=%%~dpI"
