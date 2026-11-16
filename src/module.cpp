@@ -37,7 +37,6 @@ public:
  void start(){server_->start();}
  void stop(){server_->stop();}
  bool running()const{return server_->running();}
- void publish(const std::string&label,py::bytes data){server_->publish(label,from_bytes(std::move(data)));}
  void send(const std::string&label,py::object value){server_->send(label,from_py(value));}
 };
 class PyClient {
@@ -50,19 +49,23 @@ public:
  void disconnect(){py::gil_scoped_release release;client_.disconnect();}
  bool connected()const{return client_.connected();}
  std::string id()const{return client_.id();}
- void publish(const std::string&label,py::bytes data){client_.publish(label,from_bytes(std::move(data)));}
  void send(const std::string&label,py::object value){client_.send(label,from_py(value));}
- void on(const std::string&label,py::function cb,bool decode){
+ void on(const std::string&label,py::function cb){
   auto owned=std::shared_ptr<py::function>(new py::function(std::move(cb)),[](py::function*p){
    if(Py_IsInitialized()){py::gil_scoped_acquire gil;delete p;}else delete p;
   });
-  client_.on(label,[owned,decode](const std::string&name,const Bytes&payload){
-   py::gil_scoped_acquire gil;
-   py::object message;
-   if(decode)message=to_py(decode_value(payload));
-   else message=py::bytes(reinterpret_cast<const char*>(payload.data()),payload.size());
-   (*owned)(name,std::move(message));
+  client_.on(label,[owned](const std::string&name,const Value&value){
+   py::gil_scoped_acquire gil;(*owned)(name,to_py(value));
   });
+ }
+ py::object recv(long long timeout_ms){
+  std::optional<Message> message;
+  {py::gil_scoped_release release;
+   if(timeout_ms<0)message=client_.recv();
+   else message=client_.recv(std::chrono::milliseconds(timeout_ms));
+  }
+  if(!message)return py::none();
+  return py::make_tuple(py::str(message->label),to_py(message->value));
  }
  void off(const std::string&label){client_.off(label);}
 };
@@ -86,7 +89,6 @@ PYBIND11_MODULE(pipeipc,m){
   .def("start",&PyServer::start)
   .def("stop",&PyServer::stop,py::call_guard<py::gil_scoped_release>())
   .def_property_readonly("running",&PyServer::running)
-  .def("publish",&PyServer::publish,py::arg("label"),py::arg("payload"))
   .def("send",&PyServer::send,py::arg("label"),py::arg("value"));
  py::class_<PyClient>(m,"Client")
   .def(py::init<std::wstring>(),py::arg("name")=L"default")
@@ -94,10 +96,9 @@ PYBIND11_MODULE(pipeipc,m){
   .def("disconnect",&PyClient::disconnect)
   .def_property_readonly("connected",&PyClient::connected)
   .def_property_readonly("id",&PyClient::id)
-  .def("publish",&PyClient::publish,py::arg("label"),py::arg("payload"))
   .def("send",&PyClient::send,py::arg("label"),py::arg("value"))
-  .def("on",[](PyClient&c,const std::string&label,py::function cb){c.on(label,std::move(cb),false);},py::arg("label"),py::arg("callback"))
-  .def("on_value",[](PyClient&c,const std::string&label,py::function cb){c.on(label,std::move(cb),true);},py::arg("label"),py::arg("callback"))
+  .def("recv",&PyClient::recv,py::arg("timeout_ms")=-1)
+  .def("on",&PyClient::on,py::arg("label"),py::arg("callback"))
   .def("off",&PyClient::off,py::arg("label"));
  py::class_<PySharedVars>(m,"SharedVars")
   .def(py::init([](PyClient&c){py::gil_scoped_release release;return std::make_unique<PySharedVars>(c);}),py::keep_alive<1,2>())
