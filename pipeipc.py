@@ -154,7 +154,8 @@ class SharedVars:
                 else:
                     new_base.pop(key, None)
             object.__setattr__(self, "_baseline", new_base)
-            object.__setattr__(self, "_revision", self._backend.revision)
+            # Only advance to the revision whose snapshot was merged above.
+            # A newer event may arrive while outgoing writes are being sent.
             object.__setattr__(
                 self, "_sync_error",
                 RuntimeError("One or more shared-variable changes could not be synchronized")
