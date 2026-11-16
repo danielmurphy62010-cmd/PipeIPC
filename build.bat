@@ -2,6 +2,7 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 if exist pipeipc.pyd del /q pipeipc.pyd
+if exist _pipeipc.pyd del /q _pipeipc.pyd
 
 if not defined MSVC_DIR set "MSVC_DIR=%OneDrive%\APPS\MSVC"
 if not defined JAVA_HOME for /f "delims=" %%I in ('where javac 2^>nul') do if not defined JAVA_HOME set "JAVA_HOME=%%~dpI.."
