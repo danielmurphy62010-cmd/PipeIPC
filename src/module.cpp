@@ -75,6 +75,11 @@ public:
  void close(){vars_.reset();}
  void write(const std::string&k,py::object v){if(!vars_)throw std::runtime_error("SharedVars is closed");vars_->write(k,from_py(v));}
  py::object read(const std::string&k)const{if(!vars_)throw std::runtime_error("SharedVars is closed");return to_py(vars_->read(k));}
+ py::object get(const std::string&k,py::object fallback=py::none())const{
+  if(!vars_)throw std::runtime_error("SharedVars is closed");
+  try{return to_py(vars_->read(k));}
+  catch(const std::out_of_range&){return fallback;}
+ }
  void erase(const std::string&k){if(!vars_)throw std::runtime_error("SharedVars is closed");vars_->erase(k);}
  bool contains(const std::string&k)const{return vars_&&vars_->contains(k);}
  bool ready()const{return vars_&&vars_->ready();}
@@ -107,7 +112,7 @@ PYBIND11_MODULE(pipeipc,m){
   .def("__contains__",&PySharedVars::contains)
   .def_property_readonly("ready",&PySharedVars::ready)
   .def_property_readonly("revision",&PySharedVars::revision)
-  .def("get",&PySharedVars::read,py::arg("key"))
+  .def("get",&PySharedVars::get,py::arg("key"),py::arg("default")=py::none())
   .def("set",&PySharedVars::write,py::arg("key"),py::arg("value"))
   .def("delete",&PySharedVars::erase,py::arg("key"))
   .def("snapshot",&PySharedVars::snapshot)
