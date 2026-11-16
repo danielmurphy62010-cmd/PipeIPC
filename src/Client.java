@@ -1,6 +1,6 @@
 package pipeipc;
 
-/** Connects an application to a PipeIPC message broker. */
+/** A connected process endpoint. Messages use send, recv, and on. */
 public final class Client implements AutoCloseable {
     static { System.loadLibrary("pipeipc_jni"); }
     private long handle;
@@ -13,7 +13,11 @@ public final class Client implements AutoCloseable {
     public synchronized void connect() { ensureOpen(); nativeConnect(handle); }
     public synchronized void disconnect() { if (handle != 0) nativeDisconnect(handle); }
     public boolean isConnected() { ensureOpen(); return nativeConnected(handle); }
-    public void publish(String label, byte[] payload) { ensureOpen(); nativePublish(handle, label, payload); }
+
+    public void send(String label, Object value) { ensureOpen(); nativeSend(handle, label, value); }
+    public Message recv() { return recv(-1); }
+    /** Waits up to timeoutMillis; a negative timeout waits until a message arrives or disconnects. */
+    public Message recv(long timeoutMillis) { ensureOpen(); return nativeRecv(handle, timeoutMillis); }
     public void on(String label, MessageListener listener) {
         ensureOpen();
         if (listener == null) throw new NullPointerException("listener");
@@ -30,7 +34,8 @@ public final class Client implements AutoCloseable {
     private static native void nativeConnect(long handle);
     private static native void nativeDisconnect(long handle);
     private static native boolean nativeConnected(long handle);
-    private static native void nativePublish(long handle, String label, byte[] payload);
+    private static native void nativeSend(long handle, String label, Object value);
+    private static native Message nativeRecv(long handle, long timeoutMillis);
     private static native void nativeOn(long handle, String label, MessageListener listener);
     private static native void nativeOff(long handle, String label);
     private static native void nativeClose(long handle);
