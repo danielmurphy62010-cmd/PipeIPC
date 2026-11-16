@@ -106,7 +106,7 @@ class SharedVars:
 
             attrs = self.__dict__
             previous = state["baseline"]
-            current = self._copy_dict(attrs)
+            current = SharedVars._copy_dict(attrs)
             dirty = {
                 key for key in set(previous) | set(current)
                 if key not in previous or key not in current
@@ -126,7 +126,7 @@ class SharedVars:
                     else:
                         attrs.pop(key, None)
                 current = self._copy_dict(attrs)
-                merged_base = self._copy_dict(current)
+                merged_base = SharedVars._copy_dict(current)
                 for key in dirty:
                     if key in previous:
                         merged_base[key] = copy.deepcopy(previous[key])
@@ -156,7 +156,7 @@ class SharedVars:
                 except Exception:
                     failed.add(key)
 
-            new_base = self._copy_dict(current)
+            new_base = SharedVars._copy_dict(current)
             for key in failed:
                 if key in previous:
                     new_base[key] = copy.deepcopy(previous[key])
@@ -180,7 +180,7 @@ class SharedVars:
         return key in self.__dict__
 
     def snapshot(self) -> dict[str, Any]:
-        return self._copy_dict(self.__dict__)
+        return SharedVars._copy_dict(self.__dict__)
 
     def is_ready(self) -> bool:
         return _state_for(self)["backend"].ready
