@@ -106,15 +106,14 @@ jobject to_java(JNIEnv*e,const Value&v){
 }
 void set_message_listener(JNIEnv*e,Client&client,const std::string&label,jobject listener){
  auto ref=std::make_shared<GlobalRef>(e,listener);
- jclass cls=e->GetObjectClass(listener);jmethodID method=e->GetMethodID(cls,"onMessage","(Ljava/lang/String;[B)V");if(!method)throw std::invalid_argument("listener must implement onMessage(String, byte[])");
- client.on(label,[ref,method,label](const std::string&name,const Bytes&data){
+ jclass cls=e->GetObjectClass(listener);jmethodID method=e->GetMethodID(cls,"onMessage","(Ljava/lang/String;Ljava/lang/Object;)V");if(!method)throw std::invalid_argument("listener must implement onMessage(String, Object)");
+ client.on(label,[ref,method](const std::string&name,const Value&value){
   JNIEnv*env=nullptr;bool detach=false;jint state=ref->vm->GetEnv(reinterpret_cast<void**>(&env),JNI_VERSION_1_6);
   if(state==JNI_EDETACHED){if(ref->vm->AttachCurrentThread(reinterpret_cast<void**>(&env),nullptr)!=JNI_OK)return;detach=true;}
-  jstring jname=env->NewStringUTF(name.c_str());jbyteArray payload=env->NewByteArray(jsize(data.size()));
-  if(!data.empty())env->SetByteArrayRegion(payload,0,jsize(data.size()),reinterpret_cast<const jbyte*>(data.data()));
+  jstring jname=env->NewStringUTF(name.c_str());jobject payload=to_java(env,value);
   env->CallVoidMethod(ref->object,method,jname,payload);
   if(env->ExceptionCheck())env->ExceptionClear();
-  env->DeleteLocalRef(jname);env->DeleteLocalRef(payload);if(detach)ref->vm->DetachCurrentThread();
+  env->DeleteLocalRef(jname);if(payload)env->DeleteLocalRef(payload);if(detach)ref->vm->DetachCurrentThread();
  });
 }
 }
@@ -125,7 +124,7 @@ extern "C" JNIEXPORT jlong JNICALL Java_pipeipc_Server_nativeCreate(JNIEnv*e,jcl
 }
 extern "C" JNIEXPORT void JNICALL Java_pipeipc_Server_nativeStart(JNIEnv*e,jclass,jlong h){try{server_ref(h).server.start();}catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());}}
 extern "C" JNIEXPORT void JNICALL Java_pipeipc_Server_nativeStop(JNIEnv*e,jclass,jlong h){try{server_ref(h).server.stop();}catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());}}
-extern "C" JNIEXPORT void JNICALL Java_pipeipc_Server_nativePublish(JNIEnv*e,jclass,jlong h,jstring label,jbyteArray payload){try{server_ref(h).server.publish(from_string(e,label),from_byte_array(e,payload));}catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());}}
+extern "C" JNIEXPORT void JNICALL Java_pipeipc_Server_nativeSend(JNIEnv*e,jclass,jlong h,jstring label,jobject value){try{server_ref(h).server.send(from_string(e,label),from_java(e,value));}catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());}}
 extern "C" JNIEXPORT void JNICALL Java_pipeipc_Server_nativeClose(JNIEnv*,jclass,jlong h){delete reinterpret_cast<ServerPtr*>(h);}
 
 extern "C" JNIEXPORT jlong JNICALL Java_pipeipc_Client_nativeCreate(JNIEnv*e,jclass,jstring name){
@@ -135,7 +134,16 @@ extern "C" JNIEXPORT jlong JNICALL Java_pipeipc_Client_nativeCreate(JNIEnv*e,jcl
 extern "C" JNIEXPORT void JNICALL Java_pipeipc_Client_nativeConnect(JNIEnv*e,jclass,jlong h){try{client_ptr(h)->client.connect();}catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());}}
 extern "C" JNIEXPORT void JNICALL Java_pipeipc_Client_nativeDisconnect(JNIEnv*e,jclass,jlong h){try{client_ptr(h)->client.disconnect();}catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());}}
 extern "C" JNIEXPORT jboolean JNICALL Java_pipeipc_Client_nativeConnected(JNIEnv*e,jclass,jlong h){try{return client_ptr(h)->client.connected()?JNI_TRUE:JNI_FALSE;}catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());return JNI_FALSE;}}
-extern "C" JNIEXPORT void JNICALL Java_pipeipc_Client_nativePublish(JNIEnv*e,jclass,jlong h,jstring label,jbyteArray payload){try{client_ptr(h)->client.publish(from_string(e,label),from_byte_array(e,payload));}catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());}}
+extern "C" JNIEXPORT void JNICALL Java_pipeipc_Client_nativeSend(JNIEnv*e,jclass,jlong h,jstring label,jobject value){try{client_ptr(h)->client.send(from_string(e,label),from_java(e,value));}catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());}}
+extern "C" JNIEXPORT jobject JNICALL Java_pipeipc_Client_nativeRecv(JNIEnv*e,jclass,jlong h,jlong timeout){
+ try{
+  auto message=timeout<0?client_ptr(h)->client.recv():client_ptr(h)->client.recv(std::chrono::milliseconds(timeout));
+  if(!message)return nullptr;
+  jclass type=e->FindClass("pipeipc/Message");jmethodID ctor=e->GetMethodID(type,"<init>","(Ljava/lang/String;Ljava/lang/Object;)V");
+  jstring label=e->NewStringUTF(message->label.c_str());jobject value=to_java(e,message->value);jobject result=e->NewObject(type,ctor,label,value);
+  e->DeleteLocalRef(label);if(value)e->DeleteLocalRef(value);return result;
+ }catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());return nullptr;}
+}
 extern "C" JNIEXPORT void JNICALL Java_pipeipc_Client_nativeOn(JNIEnv*e,jclass,jlong h,jstring label,jobject callback){try{set_message_listener(e,client_ptr(h)->client,from_string(e,label),callback);}catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());}}
 extern "C" JNIEXPORT void JNICALL Java_pipeipc_Client_nativeOff(JNIEnv*e,jclass,jlong h,jstring label){try{client_ptr(h)->client.off(from_string(e,label));}catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());}}
 extern "C" JNIEXPORT void JNICALL Java_pipeipc_Client_nativeClose(JNIEnv*,jclass,jlong h){delete reinterpret_cast<ClientPtr*>(h);}
