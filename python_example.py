@@ -33,17 +33,18 @@ def main():
                        "second client's write to the same variable")
 
             received = threading.Event()
-            messages = []
+            handled = []
 
-            def on_message(label, value):
-                messages.append((label, value))
-                received.set()
-
-            second.on_value("example.message", on_message)
+            second.on("example.message", lambda label, value: (handled.append((label, value)), received.set()))
             first.send("example.message", {"text": "hello", "count": 3})
+
+            message = second.recv(5000)
+            if message is None:
+                raise TimeoutError("Timed out waiting for recv()")
             if not received.wait(5):
-                raise TimeoutError("Timed out waiting for the message")
-            print("Message:", messages[0])
+                raise TimeoutError("Timed out waiting for on()")
+            print("recv():", message)
+            print("on():", handled[0])
             print("Shared variables:", first_vars.snapshot())
         finally:
             first_vars.delete("status")
