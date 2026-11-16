@@ -54,7 +54,7 @@ namespace {
 std::wstring base(const Options&o){return L"\\\\.\\pipe\\QuickIPC."+o.name;}
 std::wstring ctl(const Options&o){return base(o)+L".control";}
 std::wstring peerpipe(const Options&o,const std::string&id,const wchar_t*ch){return base(o)+L"."+std::wstring(id.begin(),id.end())+L"."+ch;}
-std::string make_id(){GUID g{};if(CoCreateGuid(&g)!=S_OK)throw std::runtime_error("CoCreateGuid failed");wchar_t b[40]{};StringFromGUID2(g,b,40);std::wstring w(b);return std::string(w.begin(),w.end());}
+std::string make_id(){GUID g{};if(CoCreateGuid(&g)!=S_OK)throw std::runtime_error("CoCreateGuid failed");wchar_t w[40]{};if(!StringFromGUID2(g,w,40))throw std::runtime_error("StringFromGUID2 failed");char b[40]{};int n=WideCharToMultiByte(CP_UTF8,0,w,-1,b,sizeof(b),nullptr,nullptr);if(!n)throw std::runtime_error("GUID conversion failed");return std::string(b,std::size_t(n-1));}
 Bytes read_frame(HANDLE h,const ProtocolSecrets&s){std::array<std::uint8_t,92> head{};read_exact(h,head.data(),head.size());if(!std::equal(s.magic1.begin(),s.magic1.end(),head.begin()))throw std::runtime_error("bad frame magic");std::uint32_t n=0;for(int i=0;i<4;i++)n|=std::uint32_t(head[8+i])<<(8*i);if(n>max_payload_size)throw std::runtime_error("frame exceeds limit");Bytes wire(head.begin(),head.end());wire.resize(100+n);read_exact(h,wire.data()+92,n+8);return wire;}
 void write_wire(HANDLE h,const Bytes&b){write_exact(h,b.data(),b.size());}
 }
