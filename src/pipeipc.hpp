@@ -14,6 +14,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <span>
 #include <string>
@@ -67,11 +68,12 @@ Bytes encode_frame(const ProtocolSecrets&,std::uint64_t,const std::array<std::ui
 Frame decode_frame(const ProtocolSecrets&,std::span<const std::uint8_t>);
 Bytes encode_ack(const ProtocolSecrets&,const FrameHeader&,char);
 
-using Listener=std::function<void(const std::string&,const Bytes&)>;
+struct Message { std::string label; Value value; };
+using Listener=std::function<void(const std::string&,const Value&)>;
 class ListenerRegistry {
 public:
  void add(std::string,Listener); void remove(const std::string&);
- void dispatch(const std::string&,const Bytes&)const;
+ void dispatch(const std::string&,const Value&)const;
 private:
  mutable std::mutex mutex_; std::map<std::string,std::shared_ptr<Listener>> listeners_;
 };
@@ -105,7 +107,6 @@ public:
  explicit Server(Options={}); ~Server();
  Server(const Server&)=delete; Server& operator=(const Server&)=delete;
  void start(); void stop(); bool running()const noexcept;
- void publish(const std::string& label,const Bytes& payload);
  void send(const std::string& label,const Value& value);
 private:
  struct Peer;
@@ -125,22 +126,24 @@ public:
  Client(const Client&)=delete; Client& operator=(const Client&)=delete;
  void connect(); void disconnect(); bool connected()const noexcept;
  void on(std::string label,Listener cb); void off(const std::string&);
- void publish(const std::string&,const Bytes&);
  void send(const std::string&,const Value&);
+ std::optional<Message> recv(std::chrono::milliseconds timeout=std::chrono::milliseconds::max());
  ListenerRegistry& listeners()noexcept{return listeners_;}
  const std::string& id()const noexcept{return id_;}
 private:
  void receive_loop(); void ack_loop();
- void publish_shared(const Bytes&);
- void on_shared(Listener);
+ void send_shared(const Bytes&);
+ using SharedListener=std::function<void(const Bytes&)>;
+ void on_shared(SharedListener);
  void off_shared();
  friend class SharedVars;
  Options options_; std::string id_; ProtocolSecrets secrets_{};
  std::atomic_bool connected_{false}; std::thread rx_thread_,ack_thread_;
  std::unique_ptr<Handle> tx_,rx_,txack_,rxack_;
- ListenerRegistry listeners_; std::mutex send_mutex_; std::mutex label_mutex_;
- std::map<std::array<std::uint8_t,8>,std::string> labels_;
- std::atomic_bool shared_subscribed_{false};
+ ListenerRegistry listeners_; std::mutex send_mutex_; std::mutex shared_listener_mutex_;
+ SharedListener shared_listener_; std::atomic_bool shared_subscribed_{false};
+ std::mutex inbox_mutex_; std::condition_variable inbox_cv_; std::deque<Message> inbox_;
+ std::size_t inbox_bytes_=0;
  std::atomic_uint64_t next_mid_{1};
 };
 }
