@@ -111,6 +111,7 @@ private:
  struct Peer;
  void accept_loop();
  void enqueue(const std::shared_ptr<Peer>&,Bytes);
+ void remove_peer(const std::shared_ptr<Peer>&);
  void broadcast(const Bytes&);
  void handle_shared_command(const std::shared_ptr<Peer>&,const Bytes&);
  Options options_; ProtocolSecrets secrets_; std::atomic_bool running_{false};
