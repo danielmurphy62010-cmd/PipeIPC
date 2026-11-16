@@ -86,7 +86,7 @@ public:
  std::uint64_t revision()const{return vars_?vars_->revision():0;}
  py::dict snapshot()const{if(!vars_)throw std::runtime_error("SharedVars is closed");py::dict d;for(auto&[k,v]:vars_->snapshot())d[py::str(k)]=to_py(v);return d;}
 };
-PYBIND11_MODULE(pipeipc,m){
+PYBIND11_MODULE(_pipeipc,m){
  m.doc()="PipeIPC named-pipe messaging and brokered shared variables";
  py::class_<PyServer>(m,"Server")
   .def(py::init<std::wstring>(),py::arg("name")=L"default")
@@ -104,7 +104,7 @@ PYBIND11_MODULE(pipeipc,m){
   .def("recv",&PyClient::recv,py::arg("timeout_ms")=-1)
   .def("on",&PyClient::on,py::arg("label"),py::arg("callback"))
   .def("off",&PyClient::off,py::arg("label"));
- py::class_<PySharedVars>(m,"SharedVars")
+ py::class_<PySharedVars>(m,"_SharedVarsBackend")
   .def(py::init([](PyClient&c){py::gil_scoped_release release;return std::make_unique<PySharedVars>(c);}),py::keep_alive<1,2>())
   .def("__getattr__",[](const PySharedVars&v,const std::string&k){try{return v.read(k);}catch(const std::out_of_range&){throw py::attribute_error(k);}})
   .def("__setattr__",[](PySharedVars&v,const std::string&k,py::object x){if(k.empty())throw py::attribute_error("empty variable name");v.write(k,std::move(x));})
@@ -113,8 +113,8 @@ PYBIND11_MODULE(pipeipc,m){
   .def_property_readonly("ready",&PySharedVars::ready)
   .def_property_readonly("revision",&PySharedVars::revision)
   .def("get",&PySharedVars::get,py::arg("key"),py::arg("default")=py::none())
-  .def("set",&PySharedVars::write,py::arg("key"),py::arg("value"))
-  .def("delete",&PySharedVars::erase,py::arg("key"))
+  .def("_set",&PySharedVars::write,py::arg("key"),py::arg("value"))
+  .def("_erase",&PySharedVars::erase,py::arg("key"))
   .def("snapshot",&PySharedVars::snapshot)
   .def("close",&PySharedVars::close);
 }
