@@ -106,13 +106,8 @@ PYBIND11_MODULE(_pipeipc,m){
   .def("off",&PyClient::off,py::arg("label"));
  py::class_<PySharedVars>(m,"_SharedVarsBackend")
   .def(py::init([](PyClient&c){py::gil_scoped_release release;return std::make_unique<PySharedVars>(c);}),py::keep_alive<1,2>())
-  .def("__getattr__",[](const PySharedVars&v,const std::string&k){try{return v.read(k);}catch(const std::out_of_range&){throw py::attribute_error(k);}})
-  .def("__setattr__",[](PySharedVars&v,const std::string&k,py::object x){if(k.empty())throw py::attribute_error("empty variable name");v.write(k,std::move(x));})
-  .def("__delattr__",[](PySharedVars&v,const std::string&k){if(!v.contains(k))throw py::attribute_error(k);v.erase(k);})
-  .def("__contains__",&PySharedVars::contains)
   .def_property_readonly("ready",&PySharedVars::ready)
   .def_property_readonly("revision",&PySharedVars::revision)
-  .def("get",&PySharedVars::get,py::arg("key"),py::arg("default")=py::none())
   .def("_set",&PySharedVars::write,py::arg("key"),py::arg("value"))
   .def("_erase",&PySharedVars::erase,py::arg("key"))
   .def("snapshot",&PySharedVars::snapshot)
