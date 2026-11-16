@@ -75,7 +75,7 @@ if not exist "%JAVA_HOME%\include\jni.h" (set "JAVA_STATUS=skipped - JDK JNI hea
 echo Building Java binding...
 cl /nologo /LD /std:c++20 /O2 /EHsc /MD /W3 /DNOMINMAX /DWIN32_LEAN_AND_MEAN /I..\src /I"%JAVA_HOME%\include" /I"%JAVA_HOME%\include\win32" ..\src\jni.cpp pipeipc.obj blake3.obj blake3_dispatch.obj blake3_portable.obj bcrypt.lib ole32.lib /Fe:pipeipc_jni.dll || goto :fail
 mkdir java 2>nul
-"%JBIN%\javac.exe" -d java ..\src\MessageListener.java ..\src\Server.java ..\src\Client.java ..\src\SharedVars.java ..\src\JavaExample.java || goto :fail
+"%JBIN%\javac.exe" -d java ..\src\MessageListener.java ..\src\Message.java ..\src\Server.java ..\src\Client.java ..\src\SharedVars.java ..\src\JavaExample.java || goto :fail
 "%JBIN%\java.exe" "-Djava.library.path=%CD%" -cp java JavaExample || goto :fail
 "%JBIN%\jar.exe" cf pipeipc.jar -C java . || goto :fail
 set "JAVA_STATUS=built"
