@@ -1,4 +1,4 @@
-import quickipc.SharedVars;
+import pipeipc.SharedVars;
 import java.util.*;
 
 public final class JavaExample {

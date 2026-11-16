@@ -1,4 +1,4 @@
-#include "quickipc.hpp"
+#include "pipeipc.hpp"
 #include <Windows.h>
 #include <bcrypt.h>
 #include <blake3.h>
@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-namespace quickipc {
+namespace pipeipc {
 Handle::~Handle(){if(valid())CloseHandle(h_);}
 Handle::Handle(Handle&&o)noexcept:h_(std::exchange(o.h_,INVALID_HANDLE_VALUE)){}
 Handle&Handle::operator=(Handle&&o)noexcept{if(this!=&o){if(valid())CloseHandle(h_);h_=std::exchange(o.h_,INVALID_HANDLE_VALUE);}return *this;}
@@ -23,7 +23,7 @@ Handle open_pipe(const std::wstring&name,DWORD access,DWORD timeout){if(!WaitNam
 }
 
 
-namespace quickipc { namespace {
+namespace pipeipc { namespace {
 Digest hash(std::span<const std::uint8_t>b){Digest d{};blake3_hasher h;blake3_hasher_init(&h);blake3_hasher_update(&h,b.data(),b.size());blake3_hasher_finalize(&h,d.data(),d.size());return d;}
 void add(Bytes&o,const void*p,std::size_t n){auto q=static_cast<const std::uint8_t*>(p);o.insert(o.end(),q,q+n);}
 void w32(Bytes&o,std::uint32_t v){for(int i=0;i<4;i++)o.push_back(std::uint8_t(v>>(8*i)));}
@@ -39,7 +39,7 @@ Bytes encode_ack(const ProtocolSecrets&s,const FrameHeader&h,char status){if(sta
 }
 
 
-namespace quickipc {
+namespace pipeipc {
 void ListenerRegistry::add(std::string l,Listener cb){if(l.empty()||!cb)throw std::invalid_argument("label and callback required");std::lock_guard g(mutex_);listeners_[std::move(l)]=std::move(cb);}
 void ListenerRegistry::remove(const std::string&l){std::lock_guard g(mutex_);listeners_.erase(l);}
 void ListenerRegistry::dispatch(const std::string&l,const Bytes&p)const{std::vector<Listener> calls;{std::lock_guard g(mutex_);for(auto&[k,cb]:listeners_)if(l==k||(l.size()>k.size()&&l.compare(0,k.size(),k)==0&&l[k.size()]=='.'))calls.push_back(cb);}for(auto&cb:calls)cb(l,p);}
@@ -49,9 +49,9 @@ Bytes ListenerRegistry::request(const std::string&l,const Bytes&p)const{ReplyHan
 }
 
 
-namespace quickipc {
+namespace pipeipc {
 namespace {
-std::wstring base(const Options&o){return L"\\\\.\\pipe\\QuickIPC."+o.name;}
+std::wstring base(const Options&o){return L"\\\\.\\pipe\\PipeIPC."+o.name;}
 std::wstring ctl(const Options&o){return base(o)+L".control";}
 std::wstring peerpipe(const Options&o,const std::string&id,const wchar_t*ch){return base(o)+L"."+std::wstring(id.begin(),id.end())+L"."+ch;}
 std::string make_id(){GUID g{};if(CoCreateGuid(&g)!=S_OK)throw std::runtime_error("CoCreateGuid failed");wchar_t w[40]{};if(!StringFromGUID2(g,w,40))throw std::runtime_error("StringFromGUID2 failed");char b[40]{};int n=WideCharToMultiByte(CP_UTF8,0,w,-1,b,sizeof(b),nullptr,nullptr);if(!n)throw std::runtime_error("GUID conversion failed");return std::string(b,std::size_t(n-1));}
@@ -134,7 +134,7 @@ void Client::ack_loop(){while(connected_){try{std::array<std::uint8_t,101>a{};re
 }
 
 
-namespace quickipc {
+namespace pipeipc {
 SharedVars::SharedVars(std::string l,std::string p,bool c):label_(std::move(l)),process_(std::move(p)),creator_(c){if(label_.empty()||process_.empty())throw std::invalid_argument("label and process id required");}
 void SharedVars::write(std::string k,Value v){if(!creator_)throw std::runtime_error("only creator may mutate shared variables");if(k.empty()||k.front()=='_')throw std::invalid_argument("invalid shared variable name");std::lock_guard g(mutex_);vars_[std::move(k)]=std::move(v);}
 Value SharedVars::read(const std::string&k)const{std::lock_guard g(mutex_);auto i=vars_.find(k);if(i==vars_.end())throw std::out_of_range("unknown shared variable");return i->second;}
@@ -146,7 +146,7 @@ std::map<std::string,Value> SharedVars::handle_snapshot_request()const{if(!creat
 }
 
 
-namespace quickipc { namespace {
+namespace pipeipc { namespace {
 void put(Bytes&o,std::uint64_t v){for(int i=0;i<8;i++)o.push_back(std::uint8_t(v>>(8*i)));}
 std::uint64_t get(const Bytes&b,std::size_t&p){if(p+8>b.size())throw std::runtime_error("truncated value");std::uint64_t v=0;for(int i=0;i<8;i++)v|=std::uint64_t(b[p++])<<(8*i);return v;}
 void blob(Bytes&o,const Bytes&b){put(o,b.size());o.insert(o.end(),b.begin(),b.end());}

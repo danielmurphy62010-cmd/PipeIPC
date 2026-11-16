@@ -1,4 +1,4 @@
-package quickipc;
+package pipeipc;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
@@ -6,7 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 public abstract class SharedVars implements AutoCloseable {
-    static { System.loadLibrary("quickipc_jni"); }
+    static { System.loadLibrary("pipeipc_jni"); }
     private long handle;
 
     protected SharedVars(String label) { this(label, "java", true); }

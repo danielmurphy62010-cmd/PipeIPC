@@ -22,7 +22,7 @@
 #include <variant>
 #include <vector>
 
-namespace quickipc {
+namespace pipeipc {
 using Bytes=std::vector<std::uint8_t>;
 struct Value;
 struct List { std::vector<Value> values; bool operator<(const List&)const; };

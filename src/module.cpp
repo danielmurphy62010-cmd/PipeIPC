@@ -1,7 +1,7 @@
 #include <pybind11/pybind11.h>
-#include "quickipc.hpp"
+#include "pipeipc.hpp"
 #include <type_traits>
-namespace py=pybind11; using namespace quickipc;
+namespace py=pybind11; using namespace pipeipc;
 static Value from_py(py::handle h){
  if(h.is_none())return Value{};
  if(py::isinstance<py::bool_>(h))return Value(h.cast<bool>());
@@ -34,7 +34,7 @@ public:
  bool contains(const std::string&k)const{return vars_->contains(k);}
  py::dict snapshot()const{py::dict d;for(auto&[k,v]:vars_->snapshot())d[py::str(k)]=to_py(v);return d;}
 };
-PYBIND11_MODULE(quickipc,m){
+PYBIND11_MODULE(pipeipc,m){
  py::class_<PySharedVars>(m,"SharedVars")
   .def(py::init<std::string,std::string,bool>(),py::arg("label"),py::arg("process_id")="python",py::arg("creator")=true)
   .def("__getattr__",[](const PySharedVars&v,const std::string&k){try{return v.read(k);}catch(const std::out_of_range&){throw py::attribute_error(k);}})

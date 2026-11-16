@@ -1,4 +1,4 @@
-from quickipc import SharedVars
+from pipeipc import SharedVars
 
 state = SharedVars("example")
 state.message = "hello"
