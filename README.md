@@ -12,7 +12,7 @@ Run `build.bat` from CMD. It uses the MSVC compiler already configured in the en
 
 The script downloads BLAKE3 1.5.5 into the temporary build directory. If Python is available, it installs pybind11 2.13.6 if needed and builds/tests `quickipc.pyd`. Java is built when a JDK with JNI headers is available; otherwise that binding is skipped.
 
-Outputs: `quickipc_server.exe`, `quickipc_client.exe`, `quickipc_tests.exe`, optionally `quickipc.pyd`, `quickipc_jni.dll`, and `quickipc.jar`.
+Outputs: `quickipc_core.lib`, `quickipc_server.exe`, `quickipc_client.exe`, `quickipc_tests.exe`, optionally `quickipc.pyd`, `quickipc_jni.dll`, and `quickipc.jar`.
 
 Start `quickipc_server.exe`, then run any number of `quickipc_client.exe` processes.
 
