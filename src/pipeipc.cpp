@@ -187,9 +187,6 @@ void Client::on(std::string l,Listener cb){auto id=listener_hash(l);{std::lock_g
 void Client::off(const std::string&l){listeners_.remove(l);auto id=listener_hash(l);std::lock_guard g(label_mutex_);labels_.erase(id);}
 void Client::publish(const std::string&l,const Bytes&p){if(!connected_)throw std::runtime_error("disconnected");if(l.empty())throw std::invalid_argument("message label cannot be empty");auto b=encode_frame(secrets_,next_mid_++,listener_hash(l),p);std::lock_guard g(send_mutex_);write_wire(tx_->get(),b);}
 void Client::send(const std::string&l,const Value&v){publish(l,encode_value(v));}
-void Client::request(const std::string&,const Bytes&,std::function<void(Bytes)>){throw std::runtime_error("request/reply protocol is not implemented");}
-bool Client::claim_reply(const std::string&,ReplyHandler){throw std::runtime_error("cross-process reply ownership is not implemented");}
-void Client::release_reply(const std::string&){}
 void Client::receive_loop(){while(connected_){try{auto b=read_frame(rx_->get(),secrets_);auto f=decode_frame(secrets_,b);std::string label;{std::lock_guard g(label_mutex_);auto i=labels_.find(f.header.listener_id);if(i!=labels_.end())label=i->second;}if(!label.empty())listeners_.dispatch(label,f.payload);auto ack=encode_ack(secrets_,f.header,'1');write_wire(txack_->get(),ack);write_wire(txack_->get(),encode_ack(secrets_,f.header,'2'));}catch(...){if(connected_)connected_=false;break;}}}
 void Client::ack_loop(){while(connected_){try{std::array<std::uint8_t,101>a{};read_exact(rxack_->get(),a.data(),a.size());}catch(...){if(connected_)connected_=false;break;}}}
 }
