@@ -1,7 +1,10 @@
 #include <pybind11/pybind11.h>
 #include "pipeipc.hpp"
+#include <Python.h>
 #include <type_traits>
+#include <memory>
 namespace py=pybind11; using namespace pipeipc;
+
 static Value from_py(py::handle h){
  if(h.is_none())return Value{};
  if(py::isinstance<py::bool_>(h))return Value(h.cast<bool>());
@@ -24,22 +27,86 @@ static py::object to_py(const Value&v){return std::visit([](const auto&x)->py::o
  else if constexpr(std::is_same_v<T,Bytes>)return py::bytes(reinterpret_cast<const char*>(x.data()),x.size());
  else return py::cast(x);
  },v.data);}
+static Bytes from_bytes(py::bytes value){auto s=value.cast<std::string>();return Bytes(s.begin(),s.end());}
+class PyServer {
+ std::unique_ptr<Server> server_;
+public:
+ explicit PyServer(std::wstring name){Options o;o.name=std::move(name);server_=std::make_unique<Server>(std::move(o));}
+ ~PyServer(){if(server_)server_->stop();}
+ void start(){server_->start();}
+ void stop(){server_->stop();}
+ bool running()const{return server_->running();}
+ void publish(const std::string&label,py::bytes data){server_->publish(label,from_bytes(std::move(data)));}
+ void send(const std::string&label,py::object value){server_->send(label,from_py(value));}
+};
+class PyClient {
+ Client client_;
+public:
+ explicit PyClient(std::wstring name):client_([&]{Options o;o.name=std::move(name);return o;}()){}
+ ~PyClient(){py::gil_scoped_release release;client_.disconnect();}
+ Client& core(){return client_;}
+ void connect(){client_.connect();}
+ void disconnect(){py::gil_scoped_release release;client_.disconnect();}
+ bool connected()const{return client_.connected();}
+ std::string id()const{return client_.id();}
+ void publish(const std::string&label,py::bytes data){client_.publish(label,from_bytes(std::move(data)));}
+ void send(const std::string&label,py::object value){client_.send(label,from_py(value));}
+ void on(const std::string&label,py::function cb,bool decode){
+  auto owned=std::shared_ptr<py::function>(new py::function(std::move(cb)),[](py::function*p){
+   if(Py_IsInitialized()){py::gil_scoped_acquire gil;delete p;}else delete p;
+  });
+  client_.on(label,[owned,decode](const std::string&name,const Bytes&payload){
+   py::gil_scoped_acquire gil;
+   py::object message;
+   if(decode)message=to_py(decode_value(payload));
+   else message=py::bytes(reinterpret_cast<const char*>(payload.data()),payload.size());
+   (*owned)(name,std::move(message));
+  });
+ }
+ void off(const std::string&label){client_.off(label);}
+};
 class PySharedVars {
  std::unique_ptr<SharedVars> vars_;
 public:
- PySharedVars(std::string label,std::string process="python",bool creator=true):vars_(std::make_unique<SharedVars>(std::move(label),std::move(process),creator)){}
+ explicit PySharedVars(PyClient&client):vars_(std::make_unique<SharedVars>(client.core())){}
  void write(const std::string&k,py::object v){vars_->write(k,from_py(v));}
  py::object read(const std::string&k)const{return to_py(vars_->read(k));}
  void erase(const std::string&k){vars_->erase(k);}
  bool contains(const std::string&k)const{return vars_->contains(k);}
+ bool ready()const{return vars_->ready();}
+ std::uint64_t revision()const{return vars_->revision();}
  py::dict snapshot()const{py::dict d;for(auto&[k,v]:vars_->snapshot())d[py::str(k)]=to_py(v);return d;}
 };
 PYBIND11_MODULE(pipeipc,m){
+ m.doc()="PipeIPC named-pipe messaging and brokered shared variables";
+ py::class_<PyServer>(m,"Server")
+  .def(py::init<std::wstring>(),py::arg("name")=L"default")
+  .def("start",&PyServer::start)
+  .def("stop",&PyServer::stop,py::call_guard<py::gil_scoped_release>())
+  .def_property_readonly("running",&PyServer::running)
+  .def("publish",&PyServer::publish,py::arg("label"),py::arg("payload"))
+  .def("send",&PyServer::send,py::arg("label"),py::arg("value"));
+ py::class_<PyClient>(m,"Client")
+  .def(py::init<std::wstring>(),py::arg("name")=L"default")
+  .def("connect",&PyClient::connect,py::call_guard<py::gil_scoped_release>())
+  .def("disconnect",&PyClient::disconnect)
+  .def_property_readonly("connected",&PyClient::connected)
+  .def_property_readonly("id",&PyClient::id)
+  .def("publish",&PyClient::publish,py::arg("label"),py::arg("payload"))
+  .def("send",&PyClient::send,py::arg("label"),py::arg("value"))
+  .def("on",[](PyClient&c,const std::string&label,py::function cb){c.on(label,std::move(cb),false);},py::arg("label"),py::arg("callback"))
+  .def("on_value",[](PyClient&c,const std::string&label,py::function cb){c.on(label,std::move(cb),true);},py::arg("label"),py::arg("callback"))
+  .def("off",&PyClient::off,py::arg("label"));
  py::class_<PySharedVars>(m,"SharedVars")
-  .def(py::init<std::string,std::string,bool>(),py::arg("label"),py::arg("process_id")="python",py::arg("creator")=true)
+  .def(py::init([](PyClient&c){py::gil_scoped_release release;return std::make_unique<PySharedVars>(c);}),py::keep_alive<1,2>())
   .def("__getattr__",[](const PySharedVars&v,const std::string&k){try{return v.read(k);}catch(const std::out_of_range&){throw py::attribute_error(k);}})
-  .def("__setattr__",[](PySharedVars&v,const std::string&k,py::object x){if(!k.empty()&&k[0]=='_')throw py::attribute_error("private attributes are reserved");v.write(k,std::move(x));})
+  .def("__setattr__",[](PySharedVars&v,const std::string&k,py::object x){if(k.empty())throw py::attribute_error("empty variable name");v.write(k,std::move(x));})
   .def("__delattr__",[](PySharedVars&v,const std::string&k){if(!v.contains(k))throw py::attribute_error(k);v.erase(k);})
   .def("__contains__",&PySharedVars::contains)
+  .def_property_readonly("ready",&PySharedVars::ready)
+  .def_property_readonly("revision",&PySharedVars::revision)
+  .def("get",&PySharedVars::read,py::arg("key"))
+  .def("set",&PySharedVars::write,py::arg("key"),py::arg("value"))
+  .def("delete",&PySharedVars::erase,py::arg("key"))
   .def("snapshot",&PySharedVars::snapshot);
 }
