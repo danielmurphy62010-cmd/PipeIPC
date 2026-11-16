@@ -92,7 +92,7 @@ Bytes make_shared_snapshot_request(){return Bytes{3};}
 struct Server::Peer {
  std::string id; ProtocolSecrets secrets; Handle tx,rx,txack,rxack;
  std::mutex out_mutex; std::deque<Bytes> out; std::size_t queued_bytes=0;
- std::condition_variable cv; std::atomic_bool live{true};
+ std::condition_variable cv; std::atomic_bool live{true},threads_ready{false};
  std::thread reader,writer,ackreader;
 };
 Server::Server(Options o):options_(std::move(o)),secrets_(random_secrets()){}
@@ -126,7 +126,7 @@ void Server::remove_peer(const std::shared_ptr<Peer>&p){
 void Server::reap_loop(){
  while(running_){
   std::vector<std::shared_ptr<Peer>> dead;
-  {std::lock_guard g(peers_mutex_);for(auto i=peers_.begin();i!=peers_.end();){if(!i->second->live){dead.push_back(i->second);i=peers_.erase(i);}else ++i;}}
+  {std::lock_guard g(peers_mutex_);for(auto i=peers_.begin();i!=peers_.end();){if(!i->second->live&&i->second->threads_ready){dead.push_back(i->second);i=peers_.erase(i);}else ++i;}}
   for(auto&p:dead){
    if(p->reader.joinable())p->reader.join();
    if(p->writer.joinable())p->writer.join();
@@ -186,6 +186,7 @@ void Server::accept_loop(){
   write_exact(control.get(),secrets_.magic1.data(),8);write_exact(control.get(),secrets_.magic2.data(),8);
   auto attach=[](Handle&h){BOOL x=ConnectNamedPipe(h.get(),nullptr);if(!x&&GetLastError()!=ERROR_PIPE_CONNECTED)throw std::runtime_error("peer pipe connect failed");};
   attach(p->tx);attach(p->rx);attach(p->txack);attach(p->rxack);
+  {std::lock_guard g(peers_mutex_);peers_[id]=p;}
   p->writer=std::thread([this,p]{while(p->live){Bytes b;{std::unique_lock l(p->out_mutex);p->cv.wait(l,[&]{return !p->live||!p->out.empty();});if(!p->live)break;b=std::move(p->out.front());p->out.pop_front();p->queued_bytes-=b.size();}try{write_wire(p->rx.get(),b);}catch(...){remove_peer(p);break;}}remove_peer(p);});
   p->reader=std::thread([this,p]{while(p->live){try{
    auto b=read_frame(p->tx.get(),p->secrets);auto f=decode_frame(p->secrets,b);
@@ -196,7 +197,7 @@ void Server::accept_loop(){
   remove_peer(p);
  });
   p->ackreader=std::thread([this,p]{while(p->live){try{std::array<std::uint8_t,101>a{};read_exact(p->txack.get(),a.data(),a.size());}catch(...){remove_peer(p);break;}}remove_peer(p);});
-  {std::lock_guard g(peers_mutex_);peers_[id]=p;}
+  p->threads_ready=true;
  }catch(...){if(!running_)break;Sleep(20);}}
 }
 Client::Client(Options o):options_(std::move(o)),id_(make_id()){}
