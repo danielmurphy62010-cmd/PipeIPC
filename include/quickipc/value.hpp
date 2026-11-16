@@ -7,10 +7,10 @@
 #include <vector>
 namespace quickipc {
 struct Value;
-struct List { std::vector<Value> values; };
-struct Tuple { std::vector<Value> values; };
-struct Set { std::set<Value> values; };
-struct Dict { std::map<std::string,Value> values; };
+struct List { std::vector<Value> values; bool operator<(const List&)const; };
+struct Tuple { std::vector<Value> values; bool operator<(const Tuple&)const; };
+struct Set { std::set<Value> values; bool operator<(const Set&)const; };
+struct Dict { std::map<std::string,Value> values; bool operator<(const Dict&)const; };
 using Bytes=std::vector<std::uint8_t>;
 struct Value {
  using Data=std::variant<std::monostate,Dict,List,Tuple,Set,std::int64_t,double,bool,Bytes>;
