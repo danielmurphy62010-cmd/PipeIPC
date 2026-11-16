@@ -16,9 +16,9 @@ concurrency:
 
 jobs:
   build:
-    name: MSVC x64 / CMake
+    name: MSVC x64 / CMake / Python / Java
     runs-on: windows-2022
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Check out source
@@ -31,16 +31,40 @@ jobs:
         with:
           arch: x64
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
       - name: Configure CMake
-        run: cmake -S . -B build -A x64 -DQUICKIPC_BUILD_TESTS=ON
+        run: cmake -S . -B build -A x64 -DQUICKIPC_BUILD_TESTS=ON -DQUICKIPC_BUILD_PYTHON=ON -DQUICKIPC_BUILD_JAVA=ON
 
       - name: Build Release
         run: cmake --build build --config Release --parallel
 
-      - name: Run tests
+      - name: Run C++ tests
         run: ctest --test-dir build -C Release --output-on-failure
 
-      - name: Upload executables
+      - name: Test Python binding
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = "$PWD/build/Release"
+          python -c "from quickipc import SharedVars; s=SharedVars('ci'); s.set('v', {'x':[1,2.5,True]}); assert s.get('v')['x'][0] == 1"
+
+      - name: Test Java binding
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/java | Out-Null
+          javac -d build/java bindings/java/quickipc/SharedVars.java examples/JavaExample.java
+          java -Djava.library.path="$PWD/build/Release" -cp build/java JavaExample
+
+      - name: Upload executables and bindings
         if: success()
         uses: actions/upload-artifact@v4
         with:
@@ -49,5 +73,7 @@ jobs:
             build/Release/quickipc_server.exe
             build/Release/quickipc_client.exe
             build/Release/quickipc_tests.exe
+            build/Release/quickipc.pyd
+            build/Release/quickipc_jni.dll
           if-no-files-found: error
           retention-days: 14
