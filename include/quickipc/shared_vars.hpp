@@ -9,7 +9,10 @@ public:
  SharedVars(std::string label,std::string process_id,bool creator);
  const std::string& label()const noexcept{return label_;}
  bool creator()const noexcept{return creator_;}
- void set(std::string,Value); Value get(const std::string&)const;
+ void write(std::string,Value);
+ Value read(const std::string&)const;
+ void erase(const std::string&);
+ bool contains(const std::string&)const;
  std::map<std::string,Value> snapshot()const;
  void install_snapshot(std::map<std::string,Value>);
  std::map<std::string,Value> handle_snapshot_request()const;
