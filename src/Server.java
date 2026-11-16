@@ -1,6 +1,6 @@
 package pipeipc;
 
-/** Named-pipe message broker. Start one Server for a namespace before clients connect. */
+/** Named-pipe message broker. */
 public final class Server implements AutoCloseable {
     static { System.loadLibrary("pipeipc_jni"); }
     private long handle;
@@ -12,7 +12,7 @@ public final class Server implements AutoCloseable {
     }
     public synchronized void start() { ensureOpen(); nativeStart(handle); }
     public synchronized void stop() { if (handle != 0) nativeStop(handle); }
-    public void publish(String label, byte[] payload) { ensureOpen(); nativePublish(handle, label, payload); }
+    public void send(String label, Object value) { ensureOpen(); nativeSend(handle, label, value); }
     private void ensureOpen() { if (handle == 0) throw new IllegalStateException("Server is closed"); }
     @Override public synchronized void close() {
         if (handle != 0) { nativeClose(handle); handle = 0; }
@@ -20,6 +20,6 @@ public final class Server implements AutoCloseable {
     private static native long nativeCreate(String name);
     private static native void nativeStart(long handle);
     private static native void nativeStop(long handle);
-    private static native void nativePublish(long handle, String label, byte[] payload);
+    private static native void nativeSend(long handle, String label, Object value);
     private static native void nativeClose(long handle);
 }
