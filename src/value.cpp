@@ -10,7 +10,11 @@ void blob(Bytes&o,const Bytes&b){put(o,b.size());o.insert(o.end(),b.begin(),b.en
 Bytes unblob(const Bytes&b,std::size_t&p){auto n=get(b,p);if(n>b.size()-p)throw std::runtime_error("invalid blob length");Bytes r(b.begin()+p,b.begin()+p+n);p+=n;return r;}
 void enc(Bytes&,const Value&); Value dec(const Bytes&,std::size_t&);
 }
-bool Value::operator<(const Value&o)const { if(data.index()!=o.data.index())return data.index()<o.data.index(); return data<o.data; }
+bool List::operator<(const List&o)const{return values<o.values;}
+bool Tuple::operator<(const Tuple&o)const{return values<o.values;}
+bool Set::operator<(const Set&o)const{return values<o.values;}
+bool Dict::operator<(const Dict&o)const{return values<o.values;}
+bool Value::operator<(const Value&o)const {if(data.index()!=o.data.index())return data.index()<o.data.index();return data<o.data;}
 namespace {
 void enc(Bytes&o,const Value&v){o.push_back(std::uint8_t(v.data.index()));std::visit([&](const auto&x){using T=std::decay_t<decltype(x)>;
  if constexpr(std::is_same_v<T,std::monostate>){}
