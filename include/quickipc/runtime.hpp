@@ -2,10 +2,12 @@
 #include "quickipc/protocol.hpp"
 #include "quickipc/routing.hpp"
 #include "quickipc/shared_vars.hpp"
+#include "quickipc/pipe.hpp"
 #include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -19,7 +21,7 @@ public:
  Server(const Server&)=delete; Server& operator=(const Server&)=delete;
  void start(); void stop(); bool running()const noexcept;
  void publish(const std::string& label,const Bytes& payload);
-private: struct Peer; void accept_loop(); void peer_loop(std::shared_ptr<Peer>);
+private: struct Peer; void accept_loop();
  Options options_; ProtocolSecrets secrets_; std::atomic_bool running_{false};
  std::thread accept_thread_; std::mutex peers_mutex_; std::unordered_map<std::string,std::shared_ptr<Peer>> peers_;
  std::atomic_uint64_t next_mid_{1};
@@ -40,7 +42,9 @@ private:
  void receive_loop(); void ack_loop();
  Options options_; std::string id_; ProtocolSecrets secrets_{};
  std::atomic_bool connected_{false}; std::thread rx_thread_,ack_thread_;
- ListenerRegistry listeners_; std::mutex send_mutex_; std::mutex pending_mutex_;
+ std::unique_ptr<Handle> tx_,rx_,txack_,rxack_;
+ ListenerRegistry listeners_; std::mutex send_mutex_; std::mutex pending_mutex_; std::mutex label_mutex_;
+ std::map<std::array<std::uint8_t,8>,std::string> labels_;
  std::unordered_map<std::uint64_t,std::function<void(Bytes)>> pending_;
  std::atomic_uint64_t next_mid_{1};
 };
