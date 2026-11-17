@@ -1,7 +1,15 @@
-"""PipeIPC Python API with automatically monitored shared attributes."""
+"""PipeIPC Python API: shared values are ordinary instance attributes.
+
+Use state.name = value, mutate supported containers in place, and use
+del state.name to remove a shared variable. A background thread hashes the
+instance dictionary and sends only creates, updates, and deletions.
+"""
 from __future__ import annotations
 
 import copy
+import hashlib
+import math
+import struct
 import threading
 import weakref
 from typing import Any
@@ -10,8 +18,6 @@ from _pipeipc import Client, Server, _SharedVarsBackend
 
 __all__ = ["Client", "Server", "SharedVars"]
 
-# Internal state is kept outside the instance dictionary. Therefore vars(state)
-# contains only application variables, including names beginning with "_".
 _STATE_LOCK = threading.RLock()
 _STATES: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
@@ -21,28 +27,66 @@ def _state_for(owner: "SharedVars") -> dict[str, Any]:
         return _STATES[owner]
 
 
-def _same(left: Any, right: Any) -> bool:
-    """Compare supported values recursively, treating NaN as unchanged."""
-    if type(left) is not type(right):
-        return False
-    if isinstance(left, float) and left != left and right != right:
-        return True
-    if isinstance(left, dict):
-        return left.keys() == right.keys() and all(
-            _same(left[key], right[key]) for key in left
-        )
-    if isinstance(left, (list, tuple)):
-        return len(left) == len(right) and all(
-            _same(a, b) for a, b in zip(left, right)
-        )
-    return left == right
+def _value_hash(value: Any) -> bytes:
+    """Stable type-aware hash for the value types accepted by PipeIPC."""
+    digest = hashlib.blake2b(digest_size=16)
+
+    def part(tag: bytes, raw: bytes = b"") -> None:
+        digest.update(tag)
+        digest.update(len(raw).to_bytes(8, "little"))
+        digest.update(raw)
+
+    def visit(item: Any) -> None:
+        if item is None:
+            part(b"N")
+        elif isinstance(item, bool):
+            part(b"B", b"\x01" if item else b"\x00")
+        elif isinstance(item, int):
+            part(b"I", str(item).encode("ascii"))
+        elif isinstance(item, float):
+            part(b"D", b"nan" if math.isnan(item) else struct.pack("<d", item))
+        elif isinstance(item, str):
+            part(b"S", item.encode("utf-8", "surrogatepass"))
+        elif isinstance(item, bytes):
+            part(b"Y", item)
+        elif isinstance(item, list):
+            part(b"L", len(item).to_bytes(8, "little"))
+            for child in item:
+                visit(child)
+        elif isinstance(item, tuple):
+            part(b"T", len(item).to_bytes(8, "little"))
+            for child in item:
+                visit(child)
+        elif isinstance(item, dict):
+            if any(not isinstance(key, str) for key in item):
+                raise TypeError("shared dictionary keys must be strings")
+            keys = sorted(item)
+            part(b"M", len(keys).to_bytes(8, "little"))
+            for key in keys:
+                visit(key)
+                visit(item[key])
+        elif isinstance(item, (set, frozenset)):
+            encoded = sorted(_value_hash(child) for child in item)
+            part(b"E", len(encoded).to_bytes(8, "little"))
+            for child_hash in encoded:
+                part(b"H", child_hash)
+        else:
+            raise TypeError(f"unsupported shared value type: {type(item).__name__}")
+
+    visit(value)
+    return digest.digest()
+
+
+def _hash_snapshot(values: dict[str, Any]) -> dict[str, bytes]:
+    return {str(key): _value_hash(value) for key, value in values.items()}
 
 
 class SharedVars:
-    """Shared variables stored as normal instance attributes.
+    """Shared variables exposed as normal instance attributes.
 
-    Assign with `state.name = value`, mutate nested built-in containers
-    normally, and remove a variable with `del state.name`.
+    Assign with state.name = value, mutate nested built-in containers normally,
+    and remove a variable with del state.name. The instance dictionary contains
+    only application variables; use vars(state) for a local snapshot.
     """
 
     __slots__ = ("__dict__", "__weakref__")
@@ -58,7 +102,7 @@ class SharedVars:
             "backend": backend,
             "stop": stop,
             "sync_lock": threading.RLock(),
-            "baseline": copy.deepcopy(initial),
+            "hash_table": _hash_snapshot(initial),
             "revision": backend.revision,
             "sync_error": None,
             "poll_interval": float(poll_interval),
@@ -105,91 +149,59 @@ class SharedVars:
                 return
 
             attrs = self.__dict__
-            previous = state["baseline"]
             current = SharedVars._copy_dict(attrs)
+            current_hashes = _hash_snapshot(current)
+            hash_table = state["hash_table"]
+
+            # Keep local edits, but refresh every untouched attribute from a
+            # newer broker revision.
             dirty = {
-                key for key in set(previous) | set(current)
-                if key not in previous or key not in current
-                or not _same(previous[key], current[key])
+                key for key in set(hash_table) | set(current_hashes)
+                if hash_table.get(key) != current_hashes.get(key)
             }
 
-            # Apply broker changes to untouched attributes. A simultaneous
-            # local edit takes precedence and is sent back as the newer write.
             revision = state["backend"].revision
             if revision > state["revision"]:
                 remote = state["backend"].snapshot()
-                for key in set(previous) | set(current) | set(remote):
-                    if key in dirty:
-                        continue
-                    if key in remote:
-                        attrs[key] = copy.deepcopy(remote[key])
-                    else:
-                        attrs.pop(key, None)
-                current = SharedVars._copy_dict(attrs)
-                merged_base = SharedVars._copy_dict(current)
-                for key in dirty:
-                    if key in previous:
-                        merged_base[key] = copy.deepcopy(previous[key])
-                    else:
-                        merged_base.pop(key, None)
-                previous = merged_base
-                state["baseline"] = merged_base
-                state["revision"] = revision
+                stable_revision = state["backend"].revision
+                if stable_revision != revision:
+                    remote = state["backend"].snapshot()
+                    stable_revision = state["backend"].revision
 
-            changed = {
-                key for key in set(previous) | set(current)
-                if key in current and (
-                    key not in previous or not _same(previous[key], current[key])
-                )
-            }
-            removed = set(previous) - set(current)
-            failed: set[str] = set()
+                if stable_revision > state["revision"]:
+                    for key in set(hash_table) | set(current_hashes) | set(remote):
+                        if key in dirty:
+                            continue
+                        if key in remote:
+                            attrs[key] = copy.deepcopy(remote[key])
+                        else:
+                            attrs.pop(key, None)
 
-            for key in sorted(removed):
-                try:
-                    state["backend"]._erase(key)
-                except Exception:
-                    failed.add(key)
-            for key in sorted(changed):
-                try:
-                    state["backend"]._set(key, current[key])
-                except Exception:
-                    failed.add(key)
+                    hash_table = _hash_snapshot(remote)
+                    state["hash_table"] = hash_table
+                    state["revision"] = stable_revision
+                    current = SharedVars._copy_dict(attrs)
+                    current_hashes = _hash_snapshot(current)
 
-            new_base = SharedVars._copy_dict(current)
-            for key in failed:
-                if key in previous:
-                    new_base[key] = copy.deepcopy(previous[key])
-                else:
-                    new_base.pop(key, None)
-            state["baseline"] = new_base
-            # Do not advance state["revision"] here: a newer broker event may
-            # have arrived while the outgoing changes above were being sent.
+            failed = False
+            for key in sorted(set(hash_table) | set(current_hashes)):
+                if key not in current_hashes:
+                    try:
+                        state["backend"]._erase(key)
+                        hash_table.pop(key, None)
+                    except Exception:
+                        failed = True
+                elif hash_table.get(key) != current_hashes[key]:
+                    try:
+                        state["backend"]._set(key, current[key])
+                        hash_table[key] = current_hashes[key]
+                    except Exception:
+                        failed = True
+
             state["sync_error"] = (
                 RuntimeError("One or more shared-variable changes could not be synchronized")
                 if failed else None
             )
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return self.__dict__.get(key, default)
-
-    def contains(self, key: str) -> bool:
-        return key in self.__dict__
-
-    def __contains__(self, key: str) -> bool:
-        return key in self.__dict__
-
-    def snapshot(self) -> dict[str, Any]:
-        return SharedVars._copy_dict(self.__dict__)
-
-    def is_ready(self) -> bool:
-        return _state_for(self)["backend"].ready
-
-    def get_revision(self) -> int:
-        return _state_for(self)["backend"].revision
-
-    def last_sync_error(self) -> Exception | None:
-        return _state_for(self)["sync_error"]
 
     def close(self) -> None:
         state = _state_for(self)
@@ -197,9 +209,11 @@ class SharedVars:
             if state["closed"]:
                 return
             state["stop"].set()
+
         thread = state["thread"]
         if thread is not None and thread.is_alive() and thread is not threading.current_thread():
             thread.join()
+
         error = None
         try:
             SharedVars._sync_once(self)
