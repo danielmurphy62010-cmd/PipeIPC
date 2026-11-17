@@ -4,7 +4,7 @@ import time
 from pipeipc import Client, Server, SharedVars
 
 
-def wait_until(predicate, description, timeout=5.0):
+def wait_for(predicate, description, timeout=5.0):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         if predicate():
@@ -25,38 +25,43 @@ def main():
         second_vars = SharedVars(second)
         try:
             first_vars.status = {"owner": "first", "ready": True}
-            wait_until(lambda: second_vars.get("status") == {"owner": "first", "ready": True},
-                       "first client's shared-variable update")
+            wait_for(
+                lambda: hasattr(second_vars, "status")
+                and second_vars.status == {"owner": "first", "ready": True},
+                "first client's shared-variable update",
+            )
 
-            # Mutate nested values in place; no reassignment is required.
+            # Nested dict, list, and set mutations are detected by hashing.
             first_vars.status["ready"] = False
             first_vars.status["history"] = []
             first_vars.status["history"].append("started")
             first_vars.status["labels"] = {"alpha"}
             first_vars.status["labels"].add("beta")
-            wait_until(
-                lambda: second_vars.get("status", {}).get("history") == ["started"]
-                and second_vars.get("status", {}).get("ready") is False
-                and second_vars.get("status", {}).get("labels") == {"alpha", "beta"},
-                "nested dict, list, and set mutations",
+            wait_for(
+                lambda: hasattr(second_vars, "status")
+                and second_vars.status["history"] == ["started"]
+                and second_vars.status["ready"] is False
+                and second_vars.status["labels"] == {"alpha", "beta"},
+                "nested container mutations",
             )
 
-            # Deleting the actual instance attribute removes the shared key.
             del first_vars.status
-            wait_until(lambda: not second_vars.contains("status"),
-                       "shared-variable deletion")
+            wait_for(lambda: not hasattr(second_vars, "status"), "shared-variable deletion")
 
             second_vars.status = {"owner": "second", "items": [1]}
             second_vars.status["items"].extend([2, 3])
-            wait_until(
-                lambda: first_vars.get("status", {}).get("items") == [1, 2, 3],
+            wait_for(
+                lambda: hasattr(first_vars, "status")
+                and first_vars.status["items"] == [1, 2, 3],
                 "second client's in-place list mutation",
             )
 
             received = threading.Event()
             handled = []
-
-            second.on("example.event", lambda label, value: (handled.append((label, value)), received.set()))
+            second.on(
+                "example.event",
+                lambda label, value: (handled.append((label, value)), received.set()),
+            )
             first.send("example.event", {"text": "handled by on"})
             first.send("example.recv", {"text": "received by recv"})
 
@@ -67,9 +72,9 @@ def main():
                 raise TimeoutError("Timed out waiting for on()")
             print("recv():", message)
             print("on():", handled[0])
-            print("Shared variables:", first_vars.snapshot())
+            print("Shared variables:", vars(first_vars))
         finally:
-            if first_vars.contains("status"):
+            if hasattr(first_vars, "status"):
                 del first_vars.status
             first_vars.close()
             second_vars.close()
