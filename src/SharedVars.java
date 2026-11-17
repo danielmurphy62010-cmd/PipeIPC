@@ -243,16 +243,19 @@ public class SharedVars implements AutoCloseable {
 
     private Snapshot stableSnapshot() {
         Map<String, Object> values = null;
-        long after = 0;
-        for (int attempt = 0; attempt < 4; attempt++) {
-            long before = nativeRevision(handle);
+        long before = 0;
+        for (int attempt = 0; attempt < 8; attempt++) {
+            before = nativeRevision(handle);
             @SuppressWarnings("unchecked")
             Map<String, Object> current = (Map<String, Object>) nativeSnapshot(handle);
             values = current;
-            after = nativeRevision(handle);
-            if (before == after) break;
+            long after = nativeRevision(handle);
+            if (before == after)
+                return new Snapshot(after, current);
         }
-        return new Snapshot(after, values == null ? Map.of() : values);
+        // Preserve a revision that is known to precede the snapshot race. A
+        // later pass will re-read rather than incorrectly treating it as seen.
+        return new Snapshot(before, values == null ? Map.of() : values);
     }
 
     private void updateLoop() {
