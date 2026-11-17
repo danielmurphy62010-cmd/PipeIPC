@@ -153,9 +153,7 @@ extern "C" JNIEXPORT jlong JNICALL Java_pipeipc_SharedVars_nativeCreate(JNIEnv*e
  catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());return 0;}
 }
 extern "C" JNIEXPORT void JNICALL Java_pipeipc_SharedVars_nativeWrite(JNIEnv*e,jclass,jlong h,jstring key,jobject value){try{vars_ref(h).vars.write(from_string(e,key),from_java(e,value));}catch(const std::exception&x){throw_java(e,"java/lang/IllegalArgumentException",x.what());}}
-extern "C" JNIEXPORT jobject JNICALL Java_pipeipc_SharedVars_nativeRead(JNIEnv*e,jclass,jlong h,jstring key){try{return to_java(e,vars_ref(h).vars.read(from_string(e,key)));}catch(const std::exception&x){throw_java(e,"java/lang/IllegalArgumentException",x.what());return nullptr;}}
 extern "C" JNIEXPORT void JNICALL Java_pipeipc_SharedVars_nativeDelete(JNIEnv*e,jclass,jlong h,jstring key){try{vars_ref(h).vars.erase(from_string(e,key));}catch(const std::exception&x){throw_java(e,"java/lang/IllegalArgumentException",x.what());}}
-extern "C" JNIEXPORT jboolean JNICALL Java_pipeipc_SharedVars_nativeContains(JNIEnv*e,jclass,jlong h,jstring key){try{return vars_ref(h).vars.contains(from_string(e,key))?JNI_TRUE:JNI_FALSE;}catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());return JNI_FALSE;}}
 extern "C" JNIEXPORT jobject JNICALL Java_pipeipc_SharedVars_nativeSnapshot(JNIEnv*e,jclass,jlong h){
  try{Dict values;for(auto&[k,v]:vars_ref(h).vars.snapshot())values.values.emplace(k,v);return to_java(e,Value(std::move(values)));}
  catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());return nullptr;}
