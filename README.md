@@ -82,7 +82,7 @@ try (RobotState state = new RobotState(client)) {
 }
 ~~~
 
-The updater scans the subclass's non-static, non-final, non-transient fields. It hashes scalar values and nested maps/lists/sets; a missing hash-table entry creates a variable, a changed hash updates it, and a hash-table entry with no corresponding live field is deleted. Use Object fields for values that need to accept arbitrary remote types or the SharedVars.DELETE sentinel. Declare mutable fields volatile when they are read or written by multiple application threads. Java values support null, booleans, integral/floating-point numbers, strings, byte arrays, lists, sets, and maps with string keys.
+The updater scans the subclass's non-static, non-final, non-transient fields. It hashes scalar values and nested maps/lists/sets; a missing hash-table entry creates a variable, a changed hash updates it, and a hash-table entry with no corresponding live field is deleted. Use Object fields for values that need to accept arbitrary remote types or the SharedVars.DELETE sentinel. Declare mutable fields volatile when they are read or written by multiple application threads. Java values support null, booleans, integral/floating-point numbers, strings, byte arrays, lists, sets, and maps with string keys. Because Java fields must be declared in the class, every shared key that a Java client should retain must have a matching instance field with the same name; keys without a matching field are deleted by that client. Use mutable Object fields when the value type may vary or the field needs the DELETE sentinel.
 
 ## Recording
 
