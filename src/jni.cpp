@@ -160,4 +160,5 @@ extern "C" JNIEXPORT jobject JNICALL Java_pipeipc_SharedVars_nativeSnapshot(JNIE
  try{Dict values;for(auto&[k,v]:vars_ref(h).vars.snapshot())values.values.emplace(k,v);return to_java(e,Value(std::move(values)));}
  catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());return nullptr;}
 }
+extern "C" JNIEXPORT jlong JNICALL Java_pipeipc_SharedVars_nativeRevision(JNIEnv*e,jclass,jlong h){try{return jlong(vars_ref(h).vars.revision());}catch(const std::exception&x){throw_java(e,"java/lang/IllegalStateException",x.what());return 0;}}
 extern "C" JNIEXPORT void JNICALL Java_pipeipc_SharedVars_nativeClose(JNIEnv*,jclass,jlong h){delete reinterpret_cast<JavaSharedVarsHandle*>(h);}
