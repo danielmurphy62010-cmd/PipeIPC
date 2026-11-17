@@ -81,6 +81,21 @@ def _hash_snapshot(values: dict[str, Any]) -> dict[str, bytes]:
     return {str(key): _value_hash(value) for key, value in values.items()}
 
 
+def _stable_snapshot(backend: Any) -> tuple[int, dict[str, Any]]:
+    # Keep the older revision if activity races the snapshot. The next updater
+    # pass will then notice the newer revision instead of silently skipping it.
+    revision = 0
+    snapshot: dict[str, Any] = {}
+    for _ in range(8):
+        before = backend.revision
+        snapshot = backend.snapshot()
+        after = backend.revision
+        revision = before
+        if before == after:
+            return after, snapshot
+    return revision, snapshot
+
+
 class SharedVars:
     """Shared variables exposed as normal instance attributes.
 
@@ -96,14 +111,15 @@ class SharedVars:
             raise ValueError("poll_interval must be positive")
 
         backend = _SharedVarsBackend(client)
-        initial = copy.deepcopy(backend.snapshot())
+        initial_revision, initial = _stable_snapshot(backend)
+        initial = copy.deepcopy(initial)
         stop = threading.Event()
         state = {
             "backend": backend,
             "stop": stop,
             "sync_lock": threading.RLock(),
             "hash_table": _hash_snapshot(initial),
-            "revision": backend.revision,
+            "revision": initial_revision,
             "sync_error": None,
             "poll_interval": float(poll_interval),
             "closed": False,
@@ -162,11 +178,7 @@ class SharedVars:
 
             revision = state["backend"].revision
             if revision > state["revision"]:
-                remote = state["backend"].snapshot()
-                stable_revision = state["backend"].revision
-                if stable_revision != revision:
-                    remote = state["backend"].snapshot()
-                    stable_revision = state["backend"].revision
+                stable_revision, remote = _stable_snapshot(state["backend"])
 
                 if stable_revision > state["revision"]:
                     for key in set(hash_table) | set(current_hashes) | set(remote):
