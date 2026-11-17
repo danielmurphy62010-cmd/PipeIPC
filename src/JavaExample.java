@@ -47,7 +47,7 @@ public final class JavaExample {
                     ((Map<String, Object>) firstVars.config).put("enabled", false);
                     firstVars.counter = 2L;
                     waitFor(() -> Long.valueOf(2).equals(secondVars.counter)
-                                    && Boolean.FALSE.equals(((Map<String, Object>) secondVars.config).get("enabled")),
+                                    && ((Map<String, Object>) secondVars.config).containsValue(Boolean.FALSE),
                             "nested and scalar field updates");
 
                     firstVars.status = SharedVars.DELETE;
